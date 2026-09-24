@@ -16,3 +16,10 @@
 local.properties
 .env
 debug.keystore
+
+# Build outputs & modules
+backend/.encore/
+backend/node_modules/
+backend/encore.gen/
+node_modules/
+dist/
