@@ -3,7 +3,7 @@ import { Sun, Moon } from "lucide-react";
 
 export const ThemeToggle: React.FC = () => {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
-    return (localStorage.getItem("lumira-theme") as "dark" | "light") || "dark";
+    return (localStorage.getItem("lumira-theme") as "dark" | "light") || "light";
   });
 
   useEffect(() => {
@@ -25,13 +25,13 @@ export const ThemeToggle: React.FC = () => {
   return (
     <button
       onClick={toggleTheme}
-      className="p-2 rounded-xl border border-slate-700/60 dark:border-slate-800 bg-slate-800/60 dark:bg-slate-900/60 hover:bg-slate-700/70 text-slate-300 hover:text-white transition shadow-sm"
+      className="w-9 h-9 rounded-full bg-[#F1F1F6] dark:bg-slate-800 flex items-center justify-center text-ink dark:text-slate-200 hover:opacity-80 transition"
       title={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
     >
       {theme === "dark" ? (
-        <Sun className="w-4 h-4 text-amber-400" />
+        <Sun className="w-4 h-4 text-amber" />
       ) : (
-        <Moon className="w-4 h-4 text-indigo-400" />
+        <Moon className="w-4 h-4 text-primary" />
       )}
     </button>
   );
