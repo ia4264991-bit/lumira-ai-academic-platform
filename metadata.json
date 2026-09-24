@@ -1,0 +1,6 @@
+{
+  "name": "Studley CourseSpaces",
+  "description": "Collaborative flashcard study platform with interactive CourseSpaces, real-time shared study sessions, creator content release gating, member progress tracking, live chat, and leaderboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
