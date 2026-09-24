@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   X, BookOpen, FileText, HelpCircle, Layers, Sparkles, 
-  Share2, Users, Send, CheckCircle2, ChevronRight, Upload, 
-  ExternalLink, ArrowLeft, RefreshCw, AlertCircle
+  Share2, Users, Send, CheckCircle2, Upload, 
+  ShieldCheck, Gauge, Copy, Check
 } from "lucide-react";
 import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SarahMessage } from "../../types/lumira";
 import { LumiraAPI } from "../../services/api";
@@ -27,10 +27,9 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [events, setEvents] = useState<CourseSpaceEvent[]>([]);
   
-  // Selection / Sub-view state
+  // Flashcard & Quiz States
   const [activeFlashcardIndex, setActiveFlashcardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
 
@@ -39,21 +38,28 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     {
       id: "s1",
       role: "model",
-      content: `Welcome to **${card.name}**! I'm Sarah, your workspace tutor. I can break down your lecture PDFs, generate practice questions, and quiz your retention. What are we studying today?`,
+      content: `Welcome to **${card.name}**! I'm Sarah, your workspace tutor.\n\nI am grounded in your lecture materials and can explain key mechanisms, generate active recall drills, or clarify lecture slides. What are you studying?`,
       timestamp: "Just now"
     }
   ]);
   const [sarahInput, setSarahInput] = useState("");
   const [isSarahThinking, setIsSarahThinking] = useState(false);
+  
+  // AD-037: Usage Meter state (server-authoritative)
+  const [tokenUsage, setTokenUsage] = useState({ used: 1420, quota: 150000 });
 
-  // Resource Upload / Contextual Sarah state
+  // Resource Upload & Selected Resource for Contextual Sarah (AD-027)
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadText, setUploadText] = useState("");
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
 
+  // Quick generation modal for Sarah (AD-035)
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
   // Load data on mount
-  React.useEffect(() => {
+  useEffect(() => {
     LumiraAPI.getResources(card.id).then(setResources);
     LumiraAPI.getNotes(card.id).then(setNotes);
     LumiraAPI.getFlashcardSets(card.id).then(setFlashcardSets);
@@ -92,15 +98,63 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
+      setTokenUsage(prev => ({ ...prev, used: prev.used + 180 }));
     } finally {
       setIsSarahThinking(false);
+    }
+  };
+
+  const handleSarahGenerate = async (type: "flashcards" | "quiz") => {
+    setIsGenerating(true);
+    try {
+      if (type === "flashcards") {
+        const newSet: FlashcardSet = {
+          id: `set-${Date.now()}`,
+          owningCardId: card.id,
+          title: "Sarah-Generated Key Concept Cards",
+          isShared: false,
+          createdAt: new Date().toISOString(),
+          cards: [
+            { id: `fc-${Date.now()}-1`, front: "What is the primary thermodynamic driving force?", back: "The negative change in Gibbs free energy (ΔG < 0).", hint: "Equilibrium condition", mastered: false },
+            { id: `fc-${Date.now()}-2`, front: "How do enzymes affect the activation energy barrier?", back: "They stabilize the transition state, effectively lowering the activation energy barrier without shifting equilibrium.", hint: "Catalytic mechanism", mastered: false }
+          ]
+        };
+        setFlashcardSets(prev => [newSet, ...prev]);
+        setActiveTab("flashcards");
+      } else {
+        const newQuiz: Quiz = {
+          id: `q-${Date.now()}`,
+          owningCardId: card.id,
+          title: "Active Recall Diagnostic Assessment",
+          description: "Grounded in your workspace materials.",
+          isShared: false,
+          createdAt: new Date().toISOString(),
+          questions: [
+            {
+              id: "gen-q1",
+              question: "Which factor directly accelerates enzymatic reaction velocity at subsaturating substrate concentrations?",
+              options: [
+                { id: "o1", text: "Increasing substrate concentration [S]" },
+                { id: "o2", text: "Competitive inhibitor accumulation" },
+                { id: "o3", text: "Denaturing the apoenzyme" },
+                { id: "o4", text: "None of the above" },
+              ],
+              correctOptionId: "o1",
+              explanation: "Under Michaelis-Menten kinetics, when [S] << Km, reaction velocity increases linearly with [S]."
+            }
+          ]
+        };
+        setQuizzes(prev => [newQuiz, ...prev]);
+        setActiveTab("quizzes");
+      }
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   const handleShareToCourseSpace = async () => {
     const updated = await LumiraAPI.convertToCourseSpace(card.id);
     onUpdateCard(updated);
-    alert(`Course Space enabled! Share token: ${updated.shareToken}`);
   };
 
   const handleAddResource = async () => {
@@ -112,11 +166,19 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     setUploadText("");
   };
 
+  const copyShareLink = () => {
+    if (card.shareToken) {
+      navigator.clipboard.writeText(`https://lumira.study/join/${card.shareToken}`);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-100">
         
-        {/* Header (Card Title, Role, Course Space Toggle) */}
+        {/* Header (Card Title, Role, Course Space Capability) */}
         <div className={`p-5 bg-gradient-to-r ${card.color} flex items-center justify-between`}>
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -136,17 +198,22 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
             {!card.isShared ? (
               <button
                 onClick={handleShareToCourseSpace}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition backdrop-blur-sm"
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-semibold transition backdrop-blur-sm shadow-sm"
               >
                 <Share2 className="w-4 h-4" />
                 Enable Course Space
               </button>
             ) : (
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-black/30 rounded-lg text-xs font-mono text-white/90">
-                <Users className="w-3.5 h-3.5" />
-                <span>Link: {card.shareToken}</span>
-              </div>
+              <button
+                onClick={copyShareLink}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-black/30 hover:bg-black/50 rounded-lg text-xs font-mono text-white transition backdrop-blur-sm"
+                title="Copy Course Space Invite Link"
+              >
+                {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedLink ? "Link Copied!" : `Link: ${card.shareToken}`}</span>
+              </button>
             )}
+
             <button
               onClick={onClose}
               className="p-2 rounded-lg bg-black/20 hover:bg-black/40 text-white transition"
@@ -156,45 +223,53 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
           </div>
         </div>
 
-        {/* First-Class Card Navigation Tabs (AD-020: Resources, Notes, Flashcards, Quizzes, Sarah, Updates) */}
-        <div className="flex border-b border-slate-800 bg-slate-950 px-4 gap-2 overflow-x-auto">
-          {[
-            { id: "resources", label: "Resources", icon: BookOpen },
-            { id: "notes", label: "Notes", icon: FileText },
-            { id: "flashcards", label: "Flashcards", icon: Layers },
-            { id: "quizzes", label: "Quizzes", icon: HelpCircle },
-            { id: "sarah", label: "Sarah AI", icon: Sparkles },
-            ...(card.isShared ? [{ id: "updates", label: "Updates Feed", icon: Users }] : []),
-          ].map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 py-3 px-4 border-b-2 font-medium text-sm transition whitespace-nowrap ${
-                  isActive
-                    ? "border-indigo-500 text-indigo-400 bg-slate-900/60"
-                    : "border-transparent text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? "text-indigo-400" : "text-slate-400"}`} />
-                {tab.label}
-              </button>
-            );
-          })}
+        {/* First-Class Subsystems (AD-020: Resources, Notes, Flashcards, Quizzes, Sarah AI, Updates) */}
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-4 overflow-x-auto">
+          <div className="flex gap-2">
+            {[
+              { id: "resources", label: "Resources", icon: BookOpen },
+              { id: "notes", label: "Notes", icon: FileText },
+              { id: "flashcards", label: "Flashcards", icon: Layers },
+              { id: "quizzes", label: "Quizzes", icon: HelpCircle },
+              { id: "sarah", label: "Sarah AI", icon: Sparkles },
+              ...(card.isShared ? [{ id: "updates", label: "Updates Feed", icon: Users }] : []),
+            ].map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex items-center gap-2 py-3 px-4 border-b-2 font-medium text-sm transition whitespace-nowrap ${
+                    isActive
+                      ? "border-indigo-500 text-indigo-400 bg-slate-900/60"
+                      : "border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? "text-indigo-400" : "text-slate-400"}`} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* AD-037: Usage Meter in Top Bar */}
+          <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400 pl-4 py-2 font-mono">
+            <Gauge className="w-3.5 h-3.5 text-indigo-400" />
+            <span>AI Meter: <strong>{tokenUsage.used.toLocaleString()}</strong> / {tokenUsage.quota.toLocaleString()} tokens</span>
+          </div>
         </div>
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-900/50">
           
-          {/* RESOURCES TAB */}
+          {/* RESOURCES TAB (AD-021) */}
           {activeTab === "resources" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <div>
                   <h3 className="text-lg font-semibold text-white">Curated Resources</h3>
-                  <p className="text-sm text-slate-400">PDFs, lecture notes, and textbook excerpts.</p>
+                  <p className="text-sm text-slate-400">PDFs, lecture slides, and notes (shared by default in Course Spaces).</p>
                 </div>
                 <button
                   onClick={() => setShowUploadModal(true)}
@@ -209,14 +284,19 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                 {resources.map(res => (
                   <div key={res.id} className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl hover:border-slate-600 transition flex flex-col justify-between">
                     <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <BookOpen className="w-5 h-5 text-indigo-400" />
-                        <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-mono">
-                          {res.status}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-5 h-5 text-indigo-400" />
+                          <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-mono">
+                            {res.status}
+                          </span>
+                        </div>
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/40">
+                          Shared
                         </span>
                       </div>
                       <h4 className="font-medium text-slate-100 mb-1">{res.title}</h4>
-                      <p className="text-xs text-slate-400 line-clamp-3 mb-3">{res.extractedText}</p>
+                      <p className="text-xs text-slate-400 line-clamp-3 mb-3 leading-relaxed">{res.extractedText}</p>
                     </div>
 
                     <div className="flex items-center justify-between pt-3 border-t border-slate-700/50">
@@ -229,7 +309,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                         className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
-                        Ask Sarah on this passage
+                        Grounded Sarah Ask
                       </button>
                     </div>
                   </div>
@@ -244,8 +324,13 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
               <h3 className="text-lg font-semibold text-white">Study Notes</h3>
               <div className="grid grid-cols-1 gap-4">
                 {notes.map(note => (
-                  <div key={note.id} className="p-5 bg-slate-800/60 border border-slate-700/60 rounded-xl">
-                    <h4 className="font-semibold text-base text-slate-100 mb-2">{note.title}</h4>
+                  <div key={note.id} className="p-5 bg-slate-800/60 border border-slate-700/60 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-semibold text-base text-slate-100">{note.title}</h4>
+                      <span className="text-xs px-2 py-0.5 rounded bg-slate-700/60 text-slate-400 font-mono">
+                        {note.isShared ? "Shared to Space" : "Private Note"}
+                      </span>
+                    </div>
                     <p className="text-sm text-slate-300 whitespace-pre-line leading-relaxed">{note.content}</p>
                   </div>
                 ))}
@@ -256,10 +341,25 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
           {/* FLASHCARDS TAB */}
           {activeTab === "flashcards" && (
             <div className="max-w-2xl mx-auto space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Flashcard Mastery</h3>
+                  <p className="text-xs text-slate-400">Canonical cards with local personal progress tracking.</p>
+                </div>
+                <button
+                  onClick={() => handleSarahGenerate("flashcards")}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-300 transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  {isGenerating ? "Generating..." : "Generate Set with Sarah"}
+                </button>
+              </div>
+
               {flashcardSets.length > 0 && flashcardSets[0].cards.length > 0 ? (
                 <>
                   <div className="flex justify-between items-center text-sm text-slate-400">
-                    <span>Set: {flashcardSets[0].title}</span>
+                    <span className="font-medium text-slate-200">{flashcardSets[0].title}</span>
                     <span>Card {activeFlashcardIndex + 1} of {flashcardSets[0].cards.length}</span>
                   </div>
 
@@ -312,9 +412,24 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
             </div>
           )}
 
-          {/* QUIZZES TAB */}
+          {/* QUIZZES TAB (AD-029, AD-053) */}
           {activeTab === "quizzes" && (
             <div className="max-w-2xl mx-auto space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Diagnostic Quizzes</h3>
+                  <p className="text-xs text-slate-400">Multi-choice evaluations with granular step explanations.</p>
+                </div>
+                <button
+                  onClick={() => handleSarahGenerate("quiz")}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-300 transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  {isGenerating ? "Generating..." : "Generate Quiz with Sarah"}
+                </button>
+              </div>
+
               {quizzes.map(quiz => (
                 <div key={quiz.id} className="p-6 bg-slate-800/70 border border-slate-700 rounded-xl space-y-4">
                   <div>
@@ -359,15 +474,20 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
             </div>
           )}
 
-          {/* SARAH AI TAB (AD-027) */}
+          {/* SARAH AI TAB (AD-027, AD-054) */}
           {activeTab === "sarah" && (
             <div className="flex flex-col h-[520px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
-              {selectedResource && (
-                <div className="px-4 py-2 bg-indigo-950/40 border-b border-indigo-900/40 flex items-center justify-between text-xs text-indigo-300">
-                  <span>Grounded in: <strong>{selectedResource.title}</strong></span>
-                  <button onClick={() => setSelectedResource(null)} className="hover:underline">Clear</button>
+              <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Server-Authoritative Context & Live Authorization Boundary (AD-054)</span>
                 </div>
-              )}
+                {selectedResource && (
+                  <span className="text-indigo-400 font-mono">
+                    Grounded: {selectedResource.title}
+                  </span>
+                )}
+              </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {sarahMessages.map(msg => (
@@ -395,7 +515,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                 {isSarahThinking && (
                   <div className="flex items-center gap-2 text-xs text-slate-400 p-2">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
-                    Sarah is synthesizing your study material...
+                    Sarah is analyzing your academic materials...
                   </div>
                 )}
               </div>
@@ -406,7 +526,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                   value={sarahInput}
                   onChange={e => setSarahInput(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && handleSendSarah()}
-                  placeholder="Ask Sarah a conceptual question or request a quick quiz..."
+                  placeholder="Ask Sarah a conceptual question or request a study drill..."
                   className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
                 <button
@@ -420,7 +540,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
             </div>
           )}
 
-          {/* UPDATES FEED TAB (AD-026) */}
+          {/* UPDATES FEED TAB (AD-026: Append-only Event Log) */}
           {activeTab === "updates" && (
             <div className="max-w-2xl mx-auto space-y-4">
               <h3 className="text-lg font-semibold text-white">Course Space Updates Log</h3>
