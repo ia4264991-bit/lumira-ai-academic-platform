@@ -44,6 +44,7 @@ export interface Resource {
   url?: string;
   createdAt: string;
   isShared?: boolean;
+  downloadedOffline?: boolean;
 }
 
 export interface Note {

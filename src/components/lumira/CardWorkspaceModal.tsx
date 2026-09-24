@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   ArrowLeft, Share2, Sparkles, Send, CheckCircle2, Upload,
-  Copy, Check, MessageSquare, Maximize2, X, Users,
+  Copy, Check, MessageSquare, Maximize2, X, Users, Download
 } from "lucide-react";
 import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SarahMessage, SupportedFileType } from "../../types/lumira";
 import { LumiraAPI } from "../../services/api";
@@ -59,6 +59,31 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [togglingSpace, setTogglingSpace] = useState(false);
 
+  const getDownloadedKey = (resId: string) => `lumira_dl_${card.id}_${resId}`;
+
+  const isResourceDownloaded = (resId: string): boolean => {
+    try {
+      return localStorage.getItem(getDownloadedKey(resId)) === "true";
+    } catch {
+      return false;
+    }
+  };
+
+  const persistResourceDownload = (res: Resource, downloaded: boolean) => {
+    try {
+      const key = getDownloadedKey(res.id);
+      if (downloaded) {
+        localStorage.setItem(key, "true");
+        localStorage.setItem(`lumira_cached_res_${res.id}`, JSON.stringify(res));
+      } else {
+        localStorage.removeItem(key);
+        localStorage.removeItem(`lumira_cached_res_${res.id}`);
+      }
+    } catch (e) {
+      console.error("Failed to persist offline status:", e);
+    }
+  };
+
   useEffect(() => {
     loadSubsystems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,7 +98,11 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
         LumiraAPI.getQuizzes(card.id),
         LumiraAPI.getEvents(card.id)
       ]);
-      setResources(res);
+      const mappedResources = res.map(r => ({
+        ...r,
+        downloadedOffline: isResourceDownloaded(r.id) || !!r.downloadedOffline
+      }));
+      setResources(mappedResources);
       setNotes(n);
       setFlashcardSets(fc);
       setQuizzes(q);
@@ -81,6 +110,31 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     } catch (err) {
       console.error("Failed to load card aggregate subsystems:", err);
     }
+  };
+
+  const handleDownloadResource = (res: Resource, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    persistResourceDownload(res, true);
+    setResources(prev => prev.map(r => r.id === res.id ? { ...r, downloadedOffline: true } : r));
+
+    // Download document text to device
+    const content = res.chunks && res.chunks.length > 0 
+      ? res.chunks.map(c => `=== ${c.location} ===\n\n${c.content}`).join("\n\n---\n\n")
+      : (res.extractedText || "Course resource content.");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${res.title.replace(/\.[^/.]+$/, "")}_offline.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpenResource = (res: Resource) => {
+    setOpenedResource(res);
   };
 
   const handleAddResource = async () => {
@@ -273,32 +327,81 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                   <div className="text-2xl mb-2">📄</div>No resources yet
                 </div>
               ) : (
-                resources.map(res => (
-                  <div key={res.id} className="flex items-center gap-3 py-3 border-b border-line">
-                    <div className="w-9 h-9 rounded-[10px] bg-[#F1F1F6] flex items-center justify-center text-base shrink-0">📄</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[0.88rem] font-semibold truncate">{res.title}</div>
-                      <div className="text-[0.72rem] text-muted mt-0.5">
-                        {card.isShared ? "Shared with Course Space" : "Private"} · {res.fileType.toUpperCase()}
+                resources.map(res => {
+                  const isDownloaded = !!res.downloadedOffline || isResourceDownloaded(res.id);
+                  return (
+                    <div
+                      key={res.id}
+                      onClick={() => handleOpenResource(res)}
+                      className="group flex items-center gap-3 py-3 px-2 -mx-2 rounded-xl hover:bg-[#F1F1F6]/60 border-b border-line cursor-pointer transition-colors"
+                      title="Click to open and read in app"
+                    >
+                      <div className="w-9 h-9 rounded-[10px] bg-[#F1F1F6] group-hover:bg-[#E7E6EE] flex items-center justify-center text-base shrink-0 transition-colors">
+                        📄
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[0.88rem] font-semibold truncate group-hover:text-primary transition-colors">
+                            {res.title}
+                          </span>
+                          {isDownloaded && (
+                            <span 
+                              className="inline-flex items-center gap-1 text-[0.62rem] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0"
+                              title="Resource is downloaded and available offline"
+                            >
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                              Downloaded
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[0.72rem] text-muted mt-0.5">
+                          <span>{card.isShared ? "Shared with Course Space" : "Private"}</span>
+                          <span>·</span>
+                          <span className="uppercase font-mono">{res.fileType}</span>
+                          {isDownloaded && (
+                            <>
+                              <span>·</span>
+                              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Offline ready</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                          title={isDownloaded ? "Saved offline (Click to download file again)" : "Download for offline reading"}
+                          onClick={(e) => handleDownloadResource(res, e)}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+                            isDownloaded 
+                              ? "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25" 
+                              : "bg-[#F1F1F6] text-muted hover:text-ink hover:bg-[#E7E6EE]"
+                          }`}
+                        >
+                          {isDownloaded ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Download className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                        <button
+                          title="Ask Sarah about this"
+                          onClick={() => { setShowSarah(true); setSarahInput(`About "${res.title}": `); }}
+                          className="w-7 h-7 rounded-full bg-[#FFF4E0] hover:bg-amber-100 flex items-center justify-center text-[0.85rem] transition-colors"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenResource(res)}
+                          title="Open in Reader"
+                          className="w-7 h-7 rounded-full bg-[#F1F1F6] hover:bg-[#E7E6EE] flex items-center justify-center text-ink transition-colors"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {statusChip(res.status)}
                     </div>
-                    <button
-                      title="Ask Sarah about this"
-                      onClick={() => { setShowSarah(true); setSarahInput(`About "${res.title}": `); }}
-                      className="w-7 h-7 rounded-full bg-[#FFF4E0] flex items-center justify-center text-[0.85rem] shrink-0"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber" />
-                    </button>
-                    <button
-                      onClick={() => setOpenedResource(res)}
-                      title="Open in Reader"
-                      className="w-7 h-7 rounded-full bg-[#F1F1F6] flex items-center justify-center shrink-0"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                    </button>
-                    {statusChip(res.status)}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
