@@ -3,7 +3,29 @@
 
 import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SupportedFileType } from "../types/lumira";
 
-const BASE_URL = "http://localhost:4000";
+// Encore backend base URL. In production this MUST be set via VITE_API_BASE_URL
+// (e.g. your deployed Encore environment URL). Falling back to localhost:4000
+// only makes sense for local `encore run` during development.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+  });
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      message = body?.message || message;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(message);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
 
 // Pre-seeded initial data adhering to AD-019, AD-020, AD-026
 const INITIAL_CARDS: Card[] = [
@@ -318,71 +340,94 @@ const INITIAL_EVENTS: Record<string, CourseSpaceEvent[]> = {
   ]
 };
 
-function getStoredCards(): Card[] {
-  const raw = localStorage.getItem("lumira_cards");
-  if (!raw) {
-    localStorage.setItem("lumira_cards", JSON.stringify(INITIAL_CARDS));
-    return INITIAL_CARDS;
-  }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return INITIAL_CARDS;
-  }
-}
-
-function saveStoredCards(cards: Card[]) {
-  localStorage.setItem("lumira_cards", JSON.stringify(cards));
-}
-
 export const LumiraAPI = {
-  // AD-019: List Cards (mine) vs Course Spaces (scope=shared)
+  // AD-019: List Cards (mine) vs Course Spaces (scope=shared) — backend: GET /v1/cards
   async getCards(scope?: "shared"): Promise<Card[]> {
-    try {
-      const res = await fetch(`${BASE_URL}/v1/cards${scope ? `?scope=${scope}` : ""}`);
-      if (res.ok) {
-        const data = await res.json();
-        return data.cards;
-      }
-    } catch {}
-    const cards = getStoredCards();
-    if (scope === "shared") {
-      return cards.filter(c => c.isShared);
-    }
-    return cards;
+    const data = await apiFetch<{ cards: Card[] }>(`/v1/cards${scope ? `?scope=${scope}` : ""}`);
+    return data.cards;
   },
 
-  async createCard(name: string, color: string = "from-indigo-600 to-violet-700"): Promise<Card> {
-    const newCard: Card = {
-      id: `card-${Date.now()}`,
-      ownerId: "user-1",
-      name,
-      color,
-      isShared: false,
-      requireApproval: false,
-      createdAt: new Date().toISOString(),
-      role: "OWNER",
-      stats: { resourcesCount: 0, notesCount: 0, quizzesCount: 0, flashcardsCount: 0 }
-    };
-    const list = getStoredCards();
-    list.unshift(newCard);
-    saveStoredCards(list);
-    return newCard;
+  async getCard(cardId: string): Promise<Card> {
+    return apiFetch<Card>(`/v1/cards/${cardId}`);
   },
 
+  // backend: POST /v1/cards
+  async createCard(name: string, color: string = "indigo"): Promise<Card> {
+    return apiFetch<Card>(`/v1/cards`, {
+      method: "POST",
+      body: JSON.stringify({ name, color }),
+    });
+  },
+
+  // backend: POST /v1/cards/:cardId/share — enables Course Space sharing on an existing Card
   async convertToCourseSpace(cardId: string): Promise<Card> {
-    const list = getStoredCards();
-    const idx = list.findIndex(c => c.id === cardId);
-    if (idx !== -1) {
-      list[idx].isShared = true;
-      list[idx].shareToken = `lumira-${Math.random().toString(36).substring(2, 9)}`;
-      list[idx].role = "OWNER";
-      saveStoredCards(list);
-      return list[idx];
-    }
-    throw new Error("Card not found");
+    return apiFetch<Card>(`/v1/cards/${cardId}/share`, { method: "POST" });
   },
 
+  // backend: POST /v1/cards/:cardId/share-link — generate or rotate the invite link
+  async resetShareLink(cardId: string): Promise<{ shareToken: string; url: string; requireApproval: boolean }> {
+    return apiFetch(`/v1/cards/${cardId}/share-link`, { method: "POST" });
+  },
+
+  // backend: POST /v1/join/:shareToken
+  async joinCourseSpace(shareToken: string): Promise<{ card: Card; role: string; joinedAt: string }> {
+    return apiFetch(`/v1/join/${shareToken}`, { method: "POST" });
+  },
+
+  // backend: GET /v1/cards/:cardId/members
+  async getMembers(cardId: string): Promise<Array<{ userId: string; cardId: string; status: string; role: string; joinedAt: string }>> {
+    const data = await apiFetch<{ members: any[] }>(`/v1/cards/${cardId}/members`);
+    return data.members;
+  },
+
+  // backend: POST /v1/cards/:cardId/members/:userId/promote
+  async promoteMember(cardId: string, userId: string): Promise<{ success: boolean }> {
+    return apiFetch(`/v1/cards/${cardId}/members/${userId}/promote`, { method: "POST" });
+  },
+
+  // backend: POST /v1/cards/:cardId/leave
+  async leaveCourseSpace(cardId: string): Promise<{ success: boolean }> {
+    return apiFetch(`/v1/cards/${cardId}/leave`, { method: "POST" });
+  },
+
+  // backend: GET/POST /v1/cards/:cardId/chat
+  async getChatMessages(cardId: string) {
+    const data = await apiFetch<{ messages: any[] }>(`/v1/cards/${cardId}/chat`);
+    return data.messages;
+  },
+  async sendChatMessage(cardId: string, senderName: string, text: string, senderRole?: "Owner" | "Admin" | "Member") {
+    return apiFetch(`/v1/cards/${cardId}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ cardId, senderName, senderRole, text }),
+    });
+  },
+
+  // backend: GET /v1/me
+  async getMe() {
+    return apiFetch<{ userId: string; email: string; name: string; avatarUrl?: string; authProvider: string }>(`/v1/me`);
+  },
+
+  // backend: GET /v1/sarah/usage/me
+  async getSarahUsage() {
+    return apiFetch<{ used: number; quota: number }>(`/v1/sarah/usage/me`);
+  },
+
+  // backend: POST /v1/artifacts/:artifactType/:artifactId/share (and DELETE to unshare)
+  async shareArtifact(artifactType: "resource" | "note" | "quiz" | "flashcardset" | "summary", artifactId: string, cardId: string) {
+    return apiFetch(`/v1/artifacts/${artifactType}/${artifactId}/share`, {
+      method: "POST",
+      body: JSON.stringify({ artifactType, artifactId, cardId }),
+    });
+  },
+  async unshareArtifact(artifactType: string, artifactId: string, cardId: string) {
+    return apiFetch(`/v1/artifacts/${artifactType}/${artifactId}/share/${cardId}`, { method: "DELETE" });
+  },
+
+  // NOTE (architecture gap, reported not silently patched — see LUMIRA_ENGINEERING_CONTRACT §16):
+  // the backend has no Resource/Note/Quiz/FlashcardSet service yet — only artifacts.ts's
+  // share/unshare endpoints exist, which assume those artifacts are created somewhere.
+  // These four methods remain client-side-only (localStorage) until that service is designed
+  // and approved. They are NOT persisted to the backend and will not sync across devices.
   async getResources(cardId: string): Promise<Resource[]> {
     return INITIAL_RESOURCES[cardId] || [];
   },
@@ -445,43 +490,28 @@ export const LumiraAPI = {
     return INITIAL_QUIZZES[cardId] || [];
   },
 
+  // backend: GET /v1/cards/:cardId/events (AD-026 activity feed) — real endpoint, wired for real
   async getEvents(cardId: string): Promise<CourseSpaceEvent[]> {
-    return INITIAL_EVENTS[cardId] || [];
+    try {
+      const data = await apiFetch<{ events: CourseSpaceEvent[] }>(`/v1/cards/${cardId}/events`);
+      return data.events;
+    } catch {
+      // Fall back to local seed only if the backend is genuinely unreachable in dev.
+      return INITIAL_EVENTS[cardId] || [];
+    }
   },
 
-  // AD-027: Workspace Sarah & Contextual Sarah grounded in Card/Resource
+  // AD-027: Workspace Sarah — backend: POST /v1/cards/:cardId/sarah/ask
   async askSarah(params: {
     cardId: string;
     question: string;
     resourceTitle?: string;
     selectedText?: string;
   }): Promise<string> {
-    try {
-      const res = await fetch(`${BASE_URL}/v1/cards/${params.cardId}/sarah/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.answer;
-      }
-    } catch {}
-
-    // In-client Sarah response with pedagogical rigor and Socratic grounding
-    return `### Sarah AI Study Guidance
-
-Regarding **"${params.question}"**:
-
-${params.selectedText ? `> 📍 **Passage Citation**: *"${params.selectedText}"*\n` : ""}
-
-1. **Biochemical / Mathematical Mechanism**:
-   - The central factor here relies on how the regulatory domain coordinates with the active catalytic site. Notice how energy is conserved through conformational coupling.
-
-2. **Exam Diagnostic Trap**:
-   - Beware of questions claiming energy is required to *form* the bond; in this system, the free energy input is required to *induce product release* by altering binding affinity.
-
-3. **Active Recall Question**:
-   - If we introduced an inhibitor that freezes the complex in the Open state, what would happen to the substrate accumulation?`;
+    const data = await apiFetch<{ answer: string }>(`/v1/cards/${params.cardId}/sarah/ask`, {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+    return data.answer;
   }
 };

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Plus, Users, Layers, Sparkles, BookOpen, 
-  ArrowRight, LogIn, LogOut, Search, User as UserIcon,
-  CheckCircle2, FileText, HelpCircle, ShieldCheck
+import {
+  Plus, Users, Lock, Search as SearchIcon, User as UserIcon, Sparkles,
 } from "lucide-react";
 import { Card } from "../../types/lumira";
 import { LumiraAPI } from "../../services/api";
@@ -11,30 +9,46 @@ import { CardWorkspaceModal } from "./CardWorkspaceModal";
 import { AuthModal } from "./AuthModal";
 import { ThemeToggle } from "./ThemeToggle";
 
+const SWATCHES = ["#5B5FEF", "#F2A93C", "#2FAE8E", "#E8776A", "#8B5CF6", "#0EA5E9"];
+
+// Card colors in stored data may still be legacy Tailwind gradient tokens
+// ("from-indigo-600 to-violet-700") from before this redesign. Fall back to a
+// flat swatch so every tile renders correctly either way.
+function tileBackground(color: string): React.CSSProperties {
+  if (color?.startsWith("#")) return { background: color };
+  if (color && color.startsWith("from-")) return {}; // let the gradient utility class handle it
+  return { background: SWATCHES[0] };
+}
+function tileClassName(color: string): string {
+  if (color && color.startsWith("from-")) return `bg-gradient-to-br ${color} to-black/10`;
+  return "";
+}
+
 export const HomeTwoTabs: React.FC = () => {
-  // Tab state: "cards" (Personal Cards) vs "spaces" (Course Spaces) - AD-019
-  const [activeTab, setActiveTab] = useState<"cards" | "spaces">("cards");
+  const [homeTab, setHomeTab] = useState<"cards" | "spaces">("cards");
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  
-  // Auth state from AuthProvider
-  const { user, signOut, loading: authLoading } = useAuth();
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const { user, signOut } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-  // Selected Card for full page workspace
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
-
-  // Create Card modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newCardName, setNewCardName] = useState("");
-  const [newCardColor, setNewCardColor] = useState("from-indigo-600 to-violet-700");
+  const [newCardColor, setNewCardColor] = useState(SWATCHES[0]);
+  const [creating, setCreating] = useState(false);
 
   const loadCards = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const data = await LumiraAPI.getCards(activeTab === "spaces" ? "shared" : undefined);
+      const data = await LumiraAPI.getCards(homeTab === "spaces" ? "shared" : undefined);
       setCards(data);
+    } catch (err: any) {
+      setLoadError(err?.message || "Couldn't reach the Lumira server.");
+      setCards([]);
     } finally {
       setLoading(false);
     }
@@ -42,298 +56,217 @@ export const HomeTwoTabs: React.FC = () => {
 
   useEffect(() => {
     loadCards();
-  }, [activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeTab]);
 
   const handleCreateCard = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCardName.trim()) return;
+    if (!newCardName.trim() || creating) return;
+    setCreating(true);
     try {
       const newCard = await LumiraAPI.createCard(newCardName.trim(), newCardColor);
-      setShowCreateModal(false);
-      setNewCardName("");
-      // If we are on spaces tab, convert it immediately to course space
-      if (activeTab === "spaces") {
+      if (homeTab === "spaces") {
         await LumiraAPI.convertToCourseSpace(newCard.id);
       }
-      loadCards();
+      setShowCreateModal(false);
+      setNewCardName("");
+      await loadCards();
       setSelectedCard(newCard);
     } catch (err: any) {
-      alert("Failed to create card: " + err.message);
+      alert("Couldn't create that: " + (err?.message || "unknown error"));
+    } finally {
+      setCreating(false);
     }
   };
 
-  const filteredCards = cards.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      
-      {/* Platform Header Navigation */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-              Lumira
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
-                Academic Copilot
-              </span>
-            </h1>
-            <p className="text-xs text-slate-400">Architecture AD-019 • Unified Study Workspaces</p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-canvas text-ink font-sans">
+      <div className="max-w-[420px] mx-auto min-h-screen bg-surface flex flex-col relative sm:my-6 sm:min-h-[85vh] sm:rounded-[32px] sm:shadow-xl sm:overflow-hidden">
 
-        {/* Global Action Bar */}
-        <div className="flex items-center gap-3">
-          {/* Light / Dark Mode Toggle */}
+        {/* App bar */}
+        <div className="flex items-center gap-2 px-[18px] pt-4 pb-2">
+          <div className="font-display font-bold text-[1.05rem] flex items-center gap-2 text-ink">
+            <span className="w-[9px] h-[9px] rounded-full bg-amber shadow-[0_0_8px_2px_rgba(242,169,60,0.5)]" />
+            Lumira
+          </div>
+          <div className="flex-1" />
           <ThemeToggle />
-
-          {/* User Auth Info & Controls */}
           {user ? (
-            <div className="flex items-center gap-3 pl-2 border-l border-slate-800">
-              <div className="hidden sm:block text-right">
-                <p className="text-xs font-semibold text-slate-200">{user.displayName || "Scholar"}</p>
-                <p className="text-[10px] text-slate-400 truncate max-w-[120px] font-mono">{user.email || "guest@lumira.edu"}</p>
-              </div>
+            <div className="relative">
               <button
-                onClick={() => signOut()}
-                className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-950/60 hover:text-rose-400 text-slate-400 transition"
-                title="Sign Out"
+                onClick={() => setShowProfileMenu(v => !v)}
+                className="w-9 h-9 rounded-full bg-primary text-white font-display font-bold text-sm flex items-center justify-center"
+                title={user.displayName || user.email || "Account"}
               >
-                <LogOut className="w-4 h-4" />
+                {(user.displayName || user.email || "S")[0].toUpperCase()}
               </button>
+              {showProfileMenu && (
+                <div className="absolute right-0 top-11 z-30 bg-surface border border-line rounded-xl shadow-lg py-2 w-44 text-sm">
+                  <div className="px-3 py-1.5 text-muted truncate">{user.email || "Guest"}</div>
+                  <button
+                    onClick={() => { setShowProfileMenu(false); signOut(); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-canvas text-ink"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button
               onClick={() => setShowAuthModal(true)}
-              className="flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition"
+              className="w-9 h-9 rounded-full bg-[#F1F1F6] flex items-center justify-center text-ink"
+              title="Sign in"
             >
-              <LogIn className="w-4 h-4" />
-              <span>Sign In / Guest</span>
+              <UserIcon className="w-4 h-4" />
             </button>
           )}
         </div>
-      </header>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-8">
-        
-        {/* Top Control Bar: Two Tabs (AD-019) + Search & Create */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          
-          {/* AD-019: Filtered read tabs over single Card aggregate */}
-          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
-            <button
-              onClick={() => setActiveTab("cards")}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition ${
-                activeTab === "cards"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              <span>Personal Cards</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("spaces")}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition ${
-                activeTab === "spaces"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Course Spaces</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder={activeTab === "cards" ? "Search your cards..." : "Search course spaces..."}
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/20 shrink-0 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{activeTab === "cards" ? "New Card" : "New Course Space"}</span>
-            </button>
-          </div>
+        {/* Segmented control */}
+        <div className="flex bg-[#F1F1F6] rounded-xl mx-[18px] mt-1.5 mb-3 p-[3px]">
+          <button
+            onClick={() => setHomeTab("cards")}
+            className={`flex-1 py-2.5 text-sm font-display font-semibold rounded-[9px] transition ${
+              homeTab === "cards" ? "bg-surface text-ink shadow-sm" : "text-muted"
+            }`}
+          >
+            Cards
+          </button>
+          <button
+            onClick={() => setHomeTab("spaces")}
+            className={`flex-1 py-2.5 text-sm font-display font-semibold rounded-[9px] transition ${
+              homeTab === "spaces" ? "bg-surface text-ink shadow-sm" : "text-muted"
+            }`}
+          >
+            Course Spaces
+          </button>
         </div>
 
-        {/* Content Grid */}
-        {loading ? (
-          <div className="flex justify-center items-center py-24">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-          </div>
-        ) : filteredCards.length === 0 ? (
-          <div className="text-center py-20 border border-dashed border-slate-800 rounded-2xl bg-slate-900/30 space-y-4">
-            <BookOpen className="w-12 h-12 text-slate-600 mx-auto" />
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold text-slate-200">
-                {activeTab === "cards" ? "No Personal Cards found" : "No Course Spaces joined yet"}
-              </h3>
-              <p className="text-sm text-slate-500 max-w-sm mx-auto">
-                {activeTab === "cards" 
-                  ? "Create your first private study card to organize lecture slides, generate quizzes, and consult Sarah AI."
-                  : "Course spaces allow shared resource collections, collaborative quizzes, and live peer discussion."}
-              </p>
+        <div className="px-[18px] py-1 text-[0.72rem] font-semibold uppercase tracking-wide text-muted">
+          {homeTab === "cards" ? "All your Cards" : "Shared with you or by you"}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto pb-24">
+          {loading ? (
+            <div className="grid grid-cols-2 gap-3 px-[18px] py-1.5">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="h-24 rounded-2xl bg-[#F1F1F6] animate-pulse" />
+              ))}
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/20"
-            >
-              {activeTab === "cards" ? "Create Study Card" : "Launch Course Space"}
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCards.map(card => (
-              <div
-                key={card.id}
-                onClick={() => setSelectedCard(card)}
-                className="group cursor-pointer bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/10 flex flex-col justify-between"
-              >
-                <div>
-                  {/* Card Gradient Banner */}
-                  <div className={`h-28 bg-gradient-to-r ${card.color} p-4 flex flex-col justify-between relative`}>
-                    <div className="flex justify-between items-start">
-                      <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/20">
-                        {card.isShared ? "Course Space" : "Personal Card"}
-                      </span>
-                      {card.role && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/30 backdrop-blur-md text-white">
-                          {card.role}
-                        </span>
-                      )}
-                    </div>
+          ) : loadError ? (
+            <div className="text-center py-10 px-6 text-muted text-sm leading-relaxed">
+              <div className="text-2xl mb-2">⚠️</div>
+              Couldn't reach the Lumira server.
+              <div className="text-xs mt-1 text-muted/80">{loadError}</div>
+              <button onClick={loadCards} className="mt-4 px-4 py-2 rounded-xl bg-primary text-white text-sm font-display font-semibold">
+                Retry
+              </button>
+            </div>
+          ) : cards.length === 0 ? (
+            <div className="text-center py-10 px-6 text-muted text-sm leading-relaxed">
+              <div className="text-2xl mb-2">🗂️</div>
+              {homeTab === "spaces"
+                ? "No Course Spaces yet — share a Card to create one."
+                : "No Cards yet — tap + to create your first one."}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 px-[18px] py-1.5">
+              {cards.map(card => (
+                <button
+                  key={card.id}
+                  onClick={() => setSelectedCard(card)}
+                  style={tileBackground(card.color)}
+                  className={`text-left rounded-[14px] p-4 min-h-[96px] text-white flex flex-col justify-between relative ${tileClassName(card.color)}`}
+                >
+                  {card.isShared && (
+                    <span className="absolute top-2.5 right-2.5 bg-white/25 rounded-full text-[0.62rem] font-semibold px-2 py-0.5">
+                      Course Space
+                    </span>
+                  )}
+                  <div className="font-display font-semibold text-[0.92rem] leading-tight pr-2">{card.name}</div>
+                  <div className="text-[0.7rem] opacity-85 flex items-center gap-1">
+                    {card.isShared ? (
+                      <><Users className="w-3 h-3" /> {card.stats ? `${card.stats.resourcesCount || 0} resources` : "Shared"}</>
+                    ) : (
+                      <><Lock className="w-3 h-3" /> Private</>
+                    )}
                   </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-                  {/* Body Content */}
-                  <div className="p-5 space-y-4">
-                    <h3 className="text-lg font-bold text-slate-100 group-hover:text-indigo-300 transition line-clamp-2">
-                      {card.name}
-                    </h3>
+        {/* FAB */}
+        <button
+          onClick={() => { setNewCardColor(SWATCHES[0]); setShowCreateModal(true); }}
+          className="absolute right-[18px] bottom-[78px] w-[54px] h-[54px] rounded-full bg-primary text-white flex items-center justify-center shadow-[0_8px_18px_rgba(91,95,239,0.4)]"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
 
-                    {/* First-class Subsystem Stats (AD-020) */}
-                    <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-800/80 text-xs">
-                      <div className="space-y-0.5">
-                        <span className="text-slate-500 block text-[10px]">RESOURCES</span>
-                        <span className="font-semibold text-slate-300">{card.stats?.resourcesCount || 0}</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-slate-500 block text-[10px]">NOTES</span>
-                        <span className="font-semibold text-slate-300">{card.stats?.notesCount || 0}</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-slate-500 block text-[10px]">QUIZZES</span>
-                        <span className="font-semibold text-slate-300">{card.stats?.quizzesCount || 0}</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-slate-500 block text-[10px]">CARDS</span>
-                        <span className="font-semibold text-slate-300">{card.stats?.flashcardsCount || 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+        {/* Bottom nav */}
+        <div className="flex border-t border-line pt-2.5 pb-3.5 px-6 bg-surface">
+          <button className="flex-1 flex flex-col items-center gap-0.5 text-primary text-[0.62rem]">
+            <span className="text-[1.15rem] leading-none">🏠</span>Home
+          </button>
+          <button className="flex-1 flex flex-col items-center gap-0.5 text-muted text-[0.62rem]">
+            <SearchIcon className="w-[1.15rem] h-[1.15rem]" />Search
+          </button>
+          <button
+            onClick={() => user ? setShowProfileMenu(v => !v) : setShowAuthModal(true)}
+            className="flex-1 flex flex-col items-center gap-0.5 text-muted text-[0.62rem]"
+          >
+            <UserIcon className="w-[1.15rem] h-[1.15rem]" />Profile
+          </button>
+        </div>
+      </div>
 
-                {/* Footer Action */}
-                <div className="p-4 bg-slate-900/60 border-t border-slate-800 flex justify-between items-center text-xs">
-                  <span className="text-slate-500 font-mono text-[11px]">
-                    Created {new Date(card.createdAt).toLocaleDateString()}
-                  </span>
-                  <span className="flex items-center gap-1 font-semibold text-indigo-400 group-hover:translate-x-0.5 transition-transform">
-                    Enter Workspace
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-
-      {/* Create Card Modal */}
+      {/* Create Card sheet */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl">
-            <h3 className="text-lg font-bold text-white">
-              {activeTab === "cards" ? "Create Personal Study Card" : "Launch Course Space"}
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[rgba(15,15,20,0.45)]" onClick={() => setShowCreateModal(false)}>
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-surface w-full sm:max-w-md sm:rounded-[20px] rounded-t-[20px] p-5 pb-7"
+          >
+            <h3 className="font-display font-bold text-[1.05rem] mb-3.5">
+              {homeTab === "cards" ? "Create New Card" : "Create New Course Space"}
             </h3>
-            <form onSubmit={handleCreateCard} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1.5">
-                  Workspace Title
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Organic Chemistry II, Machine Learning..."
-                  value={newCardName}
-                  onChange={e => setNewCardName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  autoFocus
-                />
+            <form onSubmit={handleCreateCard}>
+              <label className="text-[0.75rem] font-semibold text-muted mb-1.5 block">Card Name</label>
+              <input
+                autoFocus
+                value={newCardName}
+                onChange={e => setNewCardName(e.target.value)}
+                placeholder="e.g. Physics 101"
+                className="w-full px-[13px] py-[11px] rounded-[10px] border-[1.5px] border-line text-[0.9rem] mb-3.5 focus:outline-none focus:border-primary"
+              />
+              <label className="text-[0.75rem] font-semibold text-muted mb-1.5 block">Choose Color</label>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {SWATCHES.map(sw => (
+                  <button
+                    type="button"
+                    key={sw}
+                    onClick={() => setNewCardColor(sw)}
+                    style={{ background: sw }}
+                    className={`w-[30px] h-[30px] rounded-[9px] border-2 ${newCardColor === sw ? "border-ink" : "border-transparent"}`}
+                  />
+                ))}
               </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1.5">
-                  Theme Gradient
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    "from-indigo-600 to-violet-700",
-                    "from-emerald-600 to-teal-700",
-                    "from-blue-600 to-indigo-700",
-                    "from-amber-600 to-rose-700",
-                    "from-fuchsia-600 to-pink-700",
-                    "from-cyan-600 to-blue-700",
-                    "from-purple-600 to-indigo-800",
-                    "from-rose-600 to-red-800"
-                  ].map(grad => (
-                    <button
-                      type="button"
-                      key={grad}
-                      onClick={() => setNewCardColor(grad)}
-                      className={`h-10 rounded-lg bg-gradient-to-r ${grad} border-2 transition ${
-                        newCardColor === grad ? "border-white scale-105" : "border-transparent"
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-semibold shadow-lg shadow-indigo-600/30"
-                >
-                  Create
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={creating}
+                className="w-full py-2.5 rounded-[10px] bg-primary text-white font-display font-semibold text-[0.82rem] disabled:opacity-60"
+              >
+                {creating ? "Creating…" : `+ Create ${homeTab === "cards" ? "Card" : "Course Space"}`}
+              </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Selected Card Workspace Full Page View */}
       {selectedCard && (
         <CardWorkspaceModal
           card={selectedCard}
@@ -345,11 +278,7 @@ export const HomeTwoTabs: React.FC = () => {
         />
       )}
 
-      {/* Authentication Modal */}
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-      />
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
 };

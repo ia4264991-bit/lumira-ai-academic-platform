@@ -64,23 +64,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 max-w-md w-full space-y-6 shadow-2xl relative text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,15,20,0.45)] p-4">
+      <div className="bg-surface border border-line rounded-2xl p-6 sm:p-8 max-w-md w-full space-y-6 shadow-2xl relative text-ink">
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          className="absolute right-4 top-4 p-2 rounded-lg text-muted hover:text-ink hover:bg-[#F1F1F6] transition"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/25">
+          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center mx-auto shadow-lg shadow-primary/25">
             <Sparkles className="w-6 h-6 text-white" />
           </div>
-          <h3 className="text-xl font-bold tracking-tight text-white">
+          <h3 className="text-xl font-display font-bold tracking-tight text-ink">
             {isSignUp ? "Join Lumira Workspace" : "Welcome Back"}
           </h3>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted">
             {isSignUp 
               ? "Create your scholar profile to sync your Cards and Course Spaces" 
               : "Access your Cards, lecture notes, quizzes, and Sarah AI"}
@@ -88,8 +88,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {error && (
-          <div className="p-3 bg-red-950/50 border border-red-900/60 rounded-xl flex items-start gap-2.5 text-xs text-red-300">
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
+          <div className="p-3 bg-danger-bg border border-danger/30 rounded-xl flex items-start gap-2.5 text-xs text-danger-ink">
+            <AlertCircle className="w-4 h-4 shrink-0 text-danger-ink mt-0.5" />
             <span>{error}</span>
           </div>
         )}
@@ -98,7 +98,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         <button
           onClick={handleGoogle}
           disabled={loading}
-          className="w-full py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-semibold rounded-xl text-sm flex items-center justify-center gap-3 transition shadow-sm disabled:opacity-50"
+          className="w-full py-2.5 px-4 bg-white hover:bg-[#F6F6FA] border border-line text-ink font-display font-semibold rounded-xl text-sm flex items-center justify-center gap-3 transition shadow-sm disabled:opacity-50"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path
@@ -122,48 +122,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         </button>
 
         <div className="flex items-center gap-3">
-          <div className="h-px bg-slate-800 flex-1" />
-          <span className="text-[11px] uppercase tracking-wider text-slate-500 font-mono">or email</span>
-          <div className="h-px bg-slate-800 flex-1" />
+          <div className="h-px bg-line flex-1" />
+          <span className="text-[11px] uppercase tracking-wider text-muted">or email</span>
+          <div className="h-px bg-line flex-1" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           {isSignUp && (
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1">Scholar Name</label>
+              <label className="block text-xs font-semibold text-muted mb-1">Scholar Name</label>
               <div className="relative">
-                <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                 <input
                   type="text"
                   required
                   placeholder="e.g. Alex Rivera"
                   value={displayName}
                   onChange={e => setDisplayName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-canvas border border-line rounded-lg pl-9 pr-3 py-2 text-sm text-ink placeholder-muted focus:outline-none focus:border-primary"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1">Email Address</label>
+            <label className="block text-xs font-semibold text-muted mb-1">Email Address</label>
             <div className="relative">
-              <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 type="email"
                 required
                 placeholder="scholar@university.edu"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-canvas border border-line rounded-lg pl-9 pr-3 py-2 text-sm text-ink placeholder-muted focus:outline-none focus:border-primary"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1">Password</label>
+            <label className="block text-xs font-semibold text-muted mb-1">Password</label>
             <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 type="password"
                 required
@@ -171,7 +171,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-canvas border border-line rounded-lg pl-9 pr-3 py-2 text-sm text-ink placeholder-muted focus:outline-none focus:border-primary"
               />
             </div>
           </div>
@@ -179,23 +179,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl text-sm transition shadow-lg shadow-indigo-600/30 disabled:opacity-50"
+            className="w-full py-2.5 bg-primary hover:opacity-90 text-white font-display font-semibold rounded-xl text-sm transition shadow-lg shadow-primary/30 disabled:opacity-50"
           >
             {loading ? "Authenticating..." : isSignUp ? "Create Scholar Account" : "Sign In"}
           </button>
         </form>
 
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+        <div className="flex items-center justify-between pt-2 border-t border-line text-xs">
           <button
             onClick={() => setIsSignUp(!isSignUp)}
-            className="text-indigo-400 hover:text-indigo-300 font-medium"
+            className="text-primary hover:opacity-80 font-medium"
           >
             {isSignUp ? "Already have an account? Sign In" : "Need an account? Sign Up"}
           </button>
 
           <button
             onClick={handleGuest}
-            className="text-slate-500 hover:text-slate-300"
+            className="text-muted hover:text-ink"
           >
             Guest Demo Mode
           </button>
