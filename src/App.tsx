@@ -1,9 +1,9 @@
 import React from "react";
 import { AuthProvider } from "./context/AuthContext";
-import { HomeTwoTabs } from "./components/lumira/HomeTwoTabs";
+import { LumiraFullApp } from "./components/lumira/LumiraFullApp";
 
 export function AppContent() {
-  return <HomeTwoTabs />;
+  return <LumiraFullApp />;
 }
 
 export function App() {
