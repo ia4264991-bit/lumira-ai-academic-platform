@@ -1,4 +1,5 @@
 import React from "react";
+import { AuthProvider } from "./context/AuthContext";
 import { HomeTwoTabs } from "./components/lumira/HomeTwoTabs";
 
 export function AppContent() {
@@ -6,7 +7,11 @@ export function AppContent() {
 }
 
 export function App() {
-  return <AppContent />;
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }
 
 export default App;

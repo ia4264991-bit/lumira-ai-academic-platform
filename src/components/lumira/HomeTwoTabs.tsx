@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { 
   Plus, Users, Layers, Sparkles, BookOpen, 
-  HelpCircle, ArrowRight, Share2, LogIn, LogOut, Search
+  ArrowRight, LogIn, LogOut, Search, User as UserIcon
 } from "lucide-react";
 import { Card } from "../../types/lumira";
 import { LumiraAPI } from "../../services/api";
-import { loginWithGoogle, logout, onAuthStateChanged, FirebaseUser } from "../../services/firebase";
+import { useAuth } from "../../context/AuthContext";
 import { CardWorkspaceModal } from "./CardWorkspaceModal";
+import { AuthModal } from "./AuthModal";
 
 export const HomeTwoTabs: React.FC = () => {
   // Tab state: "cards" (Personal Cards) vs "spaces" (Course Spaces) - AD-019
@@ -15,8 +16,9 @@ export const HomeTwoTabs: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
-  // User auth state
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  // Auth state from AuthProvider
+  const { user, signOut, loading: authLoading } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Selected Card for modal workspace
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
@@ -25,13 +27,6 @@ export const HomeTwoTabs: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newCardName, setNewCardName] = useState("");
   const [newCardColor, setNewCardColor] = useState("from-indigo-600 to-violet-700");
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged((currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
 
   const loadCards = async () => {
     setLoading(true);
@@ -79,33 +74,43 @@ export const HomeTwoTabs: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {user ? (
+            {authLoading ? (
+              <span className="text-xs text-slate-500">Checking session...</span>
+            ) : user ? (
               <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-300 hidden sm:inline">
-                  {user.email || "Scholar"}
-                </span>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-200">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="Avatar" className="w-5 h-5 rounded-full object-cover" />
+                  ) : (
+                    <UserIcon className="w-3.5 h-3.5 text-indigo-400" />
+                  )}
+                  <span className="font-medium max-w-[120px] sm:max-w-[200px] truncate">
+                    {user.displayName || user.email || (user.isAnonymous ? "Guest Scholar" : "Scholar")}
+                  </span>
+                </div>
                 <button
-                  onClick={() => logout()}
+                  onClick={() => signOut()}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                  title="Sign out of Lumira"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  Sign Out
+                  <span className="hidden sm:inline">Sign Out</span>
                 </button>
               </div>
             ) : (
               <button
-                onClick={() => loginWithGoogle()}
+                onClick={() => setShowAuthModal(true)}
                 className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition"
               >
                 <LogIn className="w-3.5 h-3.5" />
-                Sign In with Google
+                Sign In
               </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Hero & Navigation Tabs (AD-019: Two views over the same aggregate) */}
+      {/* Main Workspace View */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
         
         {/* Controls Bar */}
@@ -301,6 +306,12 @@ export const HomeTwoTabs: React.FC = () => {
           }}
         />
       )}
+
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
     </div>
   );
 };
