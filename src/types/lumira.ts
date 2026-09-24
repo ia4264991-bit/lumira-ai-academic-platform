@@ -1,4 +1,4 @@
-// Lumira Domain Types strictly derived from AD-019 through AD-056
+// Lumira Domain Types strictly derived from AD-019 through AD-056 & RESOURCE_FILE_PROCESSING_SPEC
 
 export type Role = "OWNER" | "ADMIN" | "MEMBER";
 export type MembershipStatus = "ACTIVE" | "INVITED" | "LEFT" | "REMOVED";
@@ -21,15 +21,26 @@ export interface Card {
   };
 }
 
+export type SupportedFileType = "pdf" | "docx" | "pptx" | "xlsx" | "csv" | "txt" | "image";
+
+export interface ResourceChunk {
+  id: string;
+  location: string; // e.g., "Page 4", "Slide 2", "Row 14", "Section 1"
+  content: string;
+  pageNumber?: number;
+}
+
 export interface Resource {
   id: string;
   owningCardId?: string;
   owningUserId?: string;
   title: string;
   mimeType: string;
+  fileType: SupportedFileType;
   sizeBytes?: number;
   status: "READY" | "PROCESSING" | "FAILED";
   extractedText?: string;
+  chunks?: ResourceChunk[];
   url?: string;
   createdAt: string;
   isShared?: boolean;
@@ -110,4 +121,6 @@ export interface SarahMessage {
   content: string;
   timestamp: string;
   groundedResourceTitle?: string;
+  groundedPassage?: string;
+  citationLocation?: string;
 }

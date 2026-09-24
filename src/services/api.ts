@@ -1,5 +1,7 @@
-// Lumira Client API connecting to Encore Backend / Mock In-Memory Persistence
-import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SarahMessage } from "../types/lumira";
+// Lumira Client API connecting to Backend / Persistent State
+// Adheres strictly to AD-019 through AD-056 and RESOURCE_FILE_PROCESSING_SPEC
+
+import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SupportedFileType } from "../types/lumira";
 
 const BASE_URL = "http://localhost:4000";
 
@@ -14,7 +16,7 @@ const INITIAL_CARDS: Card[] = [
     requireApproval: false,
     createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
     role: "OWNER",
-    stats: { resourcesCount: 3, notesCount: 5, quizzesCount: 2, flashcardsCount: 24 }
+    stats: { resourcesCount: 4, notesCount: 5, quizzesCount: 2, flashcardsCount: 24 }
   },
   {
     id: "card-2",
@@ -26,7 +28,7 @@ const INITIAL_CARDS: Card[] = [
     requireApproval: false,
     createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
     role: "OWNER",
-    stats: { resourcesCount: 2, notesCount: 3, quizzesCount: 1, flashcardsCount: 16 }
+    stats: { resourcesCount: 3, notesCount: 3, quizzesCount: 1, flashcardsCount: 16 }
   },
   {
     id: "card-3",
@@ -49,33 +51,150 @@ const INITIAL_RESOURCES: Record<string, Resource[]> = {
       owningCardId: "card-1",
       title: "Mitochondrial Bioenergetics & ATP Synthase.pdf",
       mimeType: "application/pdf",
+      fileType: "pdf",
       sizeBytes: 2450000,
       status: "READY",
-      extractedText: "ATP synthase is a protein that catalyzes the formation of the energy storage molecule adenosine triphosphate (ATP) using adenosine diphosphate (ADP) and inorganic phosphate (Pi). The overall reaction sequence is: ADP + Pi + 2H+out ⇌ ATP + H2O + 2H+in.",
+      extractedText: "ATP synthase is a multi-part molecular machine embedded in the inner mitochondrial membrane. The enzyme consists of two functional sectors: Fo, which is hydrophobic and embedded within the lipid bilayer, and F1, which is hydrophilic and projects into the mitochondrial matrix.\n\nThe proton-motive force (pmf), composed of both an electrical membrane potential (ΔΨ) and a chemical proton gradient (ΔpH), drives protons through the Fo c-ring subunit. This proton translocation causes rotational torque of the central stalk (gamma and epsilon subunits). As the gamma shaft turns within the static (alpha-beta)3 hexamer of the F1 head, it induces distinct conformational changes across the three active catalytic sites: Open (O), Loose (L), and Tight (T).\n\nIn the Tight conformation, ADP and inorganic phosphate (Pi) are spontaneously converted to ATP. The rotation continues, shifting the site into the Open conformation, which has a very low affinity for ATP, releasing the synthesized molecule into the matrix.",
+      chunks: [
+        {
+          id: "chk-1-1",
+          pageNumber: 1,
+          location: "Page 1 - Structural Overview",
+          content: "ATP synthase consists of two distinct functional sectors: the membrane-embedded Fo complex and the matrix-exposed F1 catalytic sector. Fo contains the a-subunit and a rotating c-subunit ring (usually 8-14 subunits in eukaryotes). Protons enter the half-channels of subunit a, protonating critical carboxyl residues on the c-ring."
+        },
+        {
+          id: "chk-1-2",
+          pageNumber: 2,
+          location: "Page 2 - The Rotary Catalytic Mechanism",
+          content: "The central gamma subunit acts as an asymmetrical rotor. Rotation of the gamma shaft induces cycling between three catalytic states: Open (ATP releases), Loose (ADP and Pi bind reversibly), and Tight (spontaneous synthesis of ATP without immediate input of free energy). Energy is primarily consumed during the release step."
+        },
+        {
+          id: "chk-1-3",
+          pageNumber: 3,
+          location: "Page 3 - Respiratory Chain Coupling & Uncouplers",
+          content: "Under standard physiological conditions, electron transport through complexes I, III, and IV generates a proton electrochemical potential. Chemical uncouplers such as 2,4-Dinitrophenol (DNP) or CCCP dissipate this gradient without inhibiting electron transport, leading to high respiration with complete cessation of ATP synthesis and rapid heat generation."
+        }
+      ],
       createdAt: new Date().toISOString(),
       isShared: true,
     },
     {
       id: "res-2",
       owningCardId: "card-1",
-      title: "Signal Transduction Pathways Lecture 4.pdf",
-      mimeType: "application/pdf",
+      title: "Signal Transduction & GPCR Pathways.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      fileType: "docx",
       sizeBytes: 1850000,
       status: "READY",
-      extractedText: "G protein-coupled receptors (GPCRs) constitute a large protein family of receptors that detect molecules outside the cell and activate internal signal transduction pathways and, ultimately, cellular responses.",
+      extractedText: "G protein-coupled receptors (GPCRs) represent the largest superfamily of cell-surface receptors in the human genome. Characterized by a conserved seven-transmembrane alpha-helical architecture, they transduce extracellular signals into diverse intracellular signaling cascades via heterotrimeric G proteins (alpha, beta, gamma subunits).\n\nUpon ligand binding, GPCR undergoes a conformational change that acts as a guanine nucleotide exchange factor (GEF), facilitating the exchange of GDP for GTP on the G-alpha subunit. Activated G-alpha-GTP dissociates from the G-beta-gamma dimer and regulates effector enzymes like Adenylyl Cyclase and Phospholipase C (PLC-beta).",
+      chunks: [
+        {
+          id: "chk-2-1",
+          pageNumber: 1,
+          location: "Section 1 - GPCR Molecular Architecture",
+          content: "All GPCRs share a conserved structural core consisting of seven hydrophobic transmembrane segments interconnected by three extracellular loops (ECL1-3) and three intracellular loops (ICL1-3). Ligand binding at the extracellular domain induces rearrangement of TM5 and TM6."
+        },
+        {
+          id: "chk-2-2",
+          pageNumber: 2,
+          location: "Section 2 - Secondary Messenger Cascades (cAMP and IP3/DAG)",
+          content: "Gs activation stimulates adenylyl cyclase to convert ATP to cyclic AMP (cAMP). cAMP activates Protein Kinase A (PKA). Conversely, Gq stimulates Phospholipase C-beta to cleave PIP2 into DAG and IP3, triggering intracellular calcium release from the endoplasmic reticulum."
+        }
+      ],
+      createdAt: new Date().toISOString(),
+      isShared: true,
+    },
+    {
+      id: "res-3",
+      owningCardId: "card-1",
+      title: "Cell Cycle Checkpoints & Regulation.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      fileType: "pptx",
+      sizeBytes: 4200000,
+      status: "READY",
+      extractedText: "The eukaryotic cell cycle is governed by Cyclin-Dependent Kinases (CDKs) and their regulatory cyclin partners. Crucial checkpoints ensure genome integrity: G1/S checkpoint (restriction point governed by Rb and p53), G2/M DNA damage checkpoint, and the Spindle Assembly Checkpoint (SAC).",
+      chunks: [
+        {
+          id: "chk-3-1",
+          pageNumber: 1,
+          location: "Slide 1 - Core CDK-Cyclin Pairs",
+          content: "Cyclin D/CDK4-6 drives early G1 progression. Cyclin E/CDK2 regulates G1 to S phase transition by phosphorylating Rb, releasing E2F transcription factors. Cyclin A/CDK2 and Cyclin A/CDK1 regulate S and G2 phases. Cyclin B/CDK1 (MPF) triggers mitosis entry."
+        },
+        {
+          id: "chk-3-2",
+          pageNumber: 2,
+          location: "Slide 2 - The Spindle Assembly Checkpoint (SAC)",
+          content: "The SAC prevents anaphase onset until all sister chromatids are properly bi-oriented on the mitotic spindle with kinetochores attached to microtubules. Unattached kinetochores recruit Mad2 and BubR1 to inhibit the Anaphase-Promoting Complex/Cyclosome (APC/C)."
+        }
+      ],
+      createdAt: new Date().toISOString(),
+      isShared: true,
+    },
+    {
+      id: "res-4",
+      owningCardId: "card-1",
+      title: "Kinase Inhibition Experimental Data.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      fileType: "xlsx",
+      sizeBytes: 850000,
+      status: "READY",
+      extractedText: "Sheet 1: In Vitro Kinase Assays\nCompound A (IC50: 14.2 nM against CDK4, 820 nM against CDK2)\nCompound B (IC50: 4.8 nM against CDK4, 6.1 nM against CDK6 - highly selective)\nCompound C (Broad-spectrum pan-CDK inhibitor with off-target GSK3B activity).",
+      chunks: [
+        {
+          id: "chk-4-1",
+          pageNumber: 1,
+          location: "Sheet 1 - Kinase Screening Assay",
+          content: "Kinase Target | Compound A (nM) | Compound B (nM) | Control Staurosporine (nM)\nCDK4/CycD1 | 14.2 ± 1.1 | 4.8 ± 0.3 | 2.1 ± 0.2\nCDK6/CycD3 | 32.5 ± 2.4 | 6.1 ± 0.5 | 3.4 ± 0.4\nCDK2/CycE | 820 ± 45 | > 10,000 | 1.8 ± 0.1\nConclusion: Compound B represents a potent, selective dual CDK4/6 inhibitor."
+        }
+      ],
       createdAt: new Date().toISOString(),
       isShared: true,
     }
   ],
   "card-2": [
     {
-      id: "res-3",
+      id: "res-5",
       owningCardId: "card-2",
       title: "Eigenvalues, Eigenvectors and Diagonalization.pdf",
       mimeType: "application/pdf",
+      fileType: "pdf",
       sizeBytes: 3100000,
       status: "READY",
-      extractedText: "In linear algebra, an eigenvector or characteristic vector of a linear transformation is a nonzero vector that changes at most by a scalar factor when that linear transformation is applied to it.",
+      extractedText: "In linear algebra, an eigenvector of a linear operator A is a non-zero vector v such that A v = λ v for some scalar λ, termed the eigenvalue. To find eigenvalues, we solve the characteristic equation det(A - λ I) = 0.",
+      chunks: [
+        {
+          id: "chk-5-1",
+          pageNumber: 1,
+          location: "Page 1 - The Characteristic Polynomial",
+          content: "For an n × n matrix A, the characteristic equation is given by det(A - λ I) = 0. Its roots correspond to the eigenvalues of A. The algebraic multiplicity of an eigenvalue is its multiplicity as a root of this polynomial."
+        },
+        {
+          id: "chk-5-2",
+          pageNumber: 2,
+          location: "Page 2 - Eigenspaces and Diagonalizability",
+          content: "The eigenspace associated with eigenvalue λ is the null space Null(A - λ I). The geometric multiplicity is the dimension of this null space. A matrix is diagonalizable if and only if geometric multiplicity equals algebraic multiplicity for every eigenvalue."
+        }
+      ],
+      createdAt: new Date().toISOString(),
+      isShared: true,
+    },
+    {
+      id: "res-6",
+      owningCardId: "card-2",
+      title: "Vector Calculus Theorems (Stokes and Gauss).txt",
+      mimeType: "text/plain",
+      fileType: "txt",
+      sizeBytes: 120000,
+      status: "READY",
+      extractedText: "Gauss's Divergence Theorem states that the flux of a vector field F through a closed surface S equals the volume integral of the divergence of F over the region V bounded by S: ∬_S F · dS = ∭_V (div F) dV.\n\nStokes' Theorem relates the surface integral of the curl of F over surface S to the line integral of F along the bounding closed curve C: ∬_S (curl F) · dS = ∮_C F · dr.",
+      chunks: [
+        {
+          id: "chk-6-1",
+          pageNumber: 1,
+          location: "Section 1 - Divergence & Stokes Overview",
+          content: "Divergence Theorem translates boundary flux into volume source density. Stokes' Theorem relates boundary circulation to surface curl density. Both are generalizations of the Fundamental Theorem of Calculus to higher dimensions."
+        }
+      ],
       createdAt: new Date().toISOString(),
       isShared: true,
     }
@@ -87,8 +206,8 @@ const INITIAL_NOTES: Record<string, Note[]> = {
     {
       id: "note-1",
       owningCardId: "card-1",
-      title: "Key Takeaways: Complex IV & Cytochrome c",
-      content: "Cytochrome c oxidase (Complex IV) is the final enzyme of the electron transport chain. It receives electrons from 4 cytochrome c molecules and transfers them to one oxygen molecule, producing 2 H2O molecules while pumping 4 protons across the inner membrane.",
+      title: "Key Exam Concepts for Cellular Respiration",
+      content: "1. Chemiosmosis couples electron transport to ATP synthesis.\n2. Subunit a has two half-channels; c-ring has Asp61/Glu58.\n3. The Boyer binding mechanism: 3 states (Open, Loose, Tight).\n4. Uncouplers generate heat via non-shivering thermogenesis in brown adipose tissue.",
       isShared: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -99,15 +218,36 @@ const INITIAL_NOTES: Record<string, Note[]> = {
 const INITIAL_FLASHCARDS: Record<string, FlashcardSet[]> = {
   "card-1": [
     {
-      id: "set-1",
+      id: "fc-set-1",
       owningCardId: "card-1",
-      title: "Electron Transport Chain Core Concepts",
-      isShared: false,
+      title: "Mitochondrial Bioenergetics High-Yield",
+      isShared: true,
       createdAt: new Date().toISOString(),
       cards: [
-        { id: "fc-1", front: "What is the primary proton pump in Complex I?", back: "NADH dehydrogenase (Complex I) transfers electrons from NADH to CoQ while pumping 4 H+.", hint: "Complex I cofactor", mastered: true },
-        { id: "fc-2", front: "Which complex does NOT pump protons?", back: "Complex II (Succinate dehydrogenase)", hint: "Produces FADH2", mastered: false },
-        { id: "fc-3", front: "What is the terminal electron acceptor in aerobic respiration?", back: "Molecular Oxygen (O2), which is reduced to water.", hint: "Essential for breathing", mastered: false }
+        {
+          id: "fc-1",
+          front: "What are the two major functional sectors of ATP synthase?",
+          back: "Fo (membrane-embedded hydrophobic proton-translocating sector) and F1 (hydrophilic catalytic sector in the matrix).",
+          hint: "Think 'fraction oligomycin' and 'factor 1'."
+        },
+        {
+          id: "fc-2",
+          front: "What causes the central gamma shaft to rotate in ATP synthase?",
+          back: "Proton flow through the subunit 'a' half-channels driven by the proton-motive force causes rotation of the c-ring, which turns the attached gamma subunit.",
+          hint: "Rotary motor powered by proton-motive force."
+        },
+        {
+          id: "fc-3",
+          front: "In the Boyer binding change mechanism, what occurs in the 'Tight' conformation?",
+          back: "ADP and Pi are spontaneously converted to ATP without requiring immediate external energy.",
+          hint: "The energy is required to release ATP, not form it."
+        },
+        {
+          id: "fc-4",
+          front: "How does 2,4-Dinitrophenol (DNP) affect oxygen consumption and ATP production?",
+          back: "Oxygen consumption increases (or stays high) because electron transport continues, but ATP synthesis ceases as the proton gradient is collapsed.",
+          hint: "It acts as a protonophoric uncoupler."
+        }
       ]
     }
   ]
@@ -118,22 +258,46 @@ const INITIAL_QUIZZES: Record<string, Quiz[]> = {
     {
       id: "quiz-1",
       owningCardId: "card-1",
-      title: "Cellular Respiration Mastery Assessment",
-      description: "Test your understanding of oxidative phosphorylation and proton gradients.",
-      isShared: false,
+      title: "Cellular Bioenergetics Diagnostic Examination",
+      description: "Comprehensive 3-question evaluation covering rotary catalysis, proton-motive force, and respiratory uncoupling.",
+      isShared: true,
       createdAt: new Date().toISOString(),
       questions: [
         {
           id: "q-1",
-          question: "How many protons are pumped across the inner mitochondrial membrane per NADH oxidized?",
+          question: "During rotary catalysis in ATP synthase, in which conformational state does ATP release into the mitochondrial matrix?",
           options: [
-            { id: "opt-1", text: "4 protons" },
-            { id: "opt-2", text: "6 protons" },
-            { id: "opt-3", text: "10 protons" },
-            { id: "opt-4", text: "12 protons" }
+            { id: "o1", text: "Tight (T) conformation" },
+            { id: "o2", text: "Loose (L) conformation" },
+            { id: "o3", text: "Open (O) conformation" },
+            { id: "o4", text: "Ground state intermediate" }
           ],
-          correctOptionId: "opt-3",
-          explanation: "Complex I pumps 4 H+, Complex III pumps 4 H+, and Complex IV pumps 2 H+ (net), totaling approximately 10 H+ per NADH."
+          correctOptionId: "o3",
+          explanation: "The Open (O) state has very low affinity for ATP, permitting its dissociation. In contrast, the Tight state binds nucleotides very tightly to synthesize ATP."
+        },
+        {
+          id: "q-2",
+          question: "An experiment adds oligomycin to an active suspension of isolated mitochondria. What is the immediate effect on oxygen consumption and proton gradient?",
+          options: [
+            { id: "o1", text: "Oxygen consumption stops; proton gradient remains high" },
+            { id: "o2", text: "Oxygen consumption increases; proton gradient is dissipated" },
+            { id: "o3", text: "Both oxygen consumption and proton gradient drop to zero" },
+            { id: "o4", text: "No change in either parameter" }
+          ],
+          correctOptionId: "o1",
+          explanation: "Oligomycin directly inhibits the Fo channel of ATP synthase. Protons can no longer re-enter the matrix, building up a maximum backpressure gradient that stalls electron transport."
+        },
+        {
+          id: "q-3",
+          question: "Which component of the heterotrimeric G protein directly exchanges GDP for GTP upon GPCR activation?",
+          options: [
+            { id: "o1", text: "G-beta subunit" },
+            { id: "o2", text: "G-gamma subunit" },
+            { id: "o3", text: "G-alpha subunit" },
+            { id: "o4", text: "RGS protein" }
+          ],
+          correctOptionId: "o3",
+          explanation: "The G-alpha subunit possesses the guanine nucleotide binding pocket and hydrolyzes GTP to GDP as an intrinsic GTPase."
         }
       ]
     }
@@ -141,46 +305,35 @@ const INITIAL_QUIZZES: Record<string, Quiz[]> = {
 };
 
 const INITIAL_EVENTS: Record<string, CourseSpaceEvent[]> = {
-  "card-2": [
+  "card-1": [
     {
       id: "ev-1",
-      cardId: "card-2",
-      type: "COURSE_SPACE_CREATED",
+      cardId: "card-1",
+      type: "RESOURCE_UPLOADED",
       actorUserId: "user-1",
-      actorName: "Dr. Adams",
-      createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      payload: { title: "Course Space initiated with shared invite link" }
-    },
-    {
-      id: "ev-2",
-      cardId: "card-2",
-      type: "RESOURCE_ADDED",
-      actorUserId: "user-1",
-      actorName: "Dr. Adams",
-      createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      payload: { resourceTitle: "Eigenvalues, Eigenvectors and Diagonalization.pdf" }
-    },
-    {
-      id: "ev-3",
-      cardId: "card-2",
-      type: "MEMBER_JOINED",
-      actorUserId: "user-2",
-      actorName: "Alex Rivera",
-      createdAt: new Date().toISOString(),
-      payload: { note: "Joined via App Link" }
+      actorName: "Prof. Adams",
+      createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+      payload: { resourceTitle: "Mitochondrial Bioenergetics & ATP Synthase.pdf" }
     }
   ]
 };
 
-// Local storage backing for instant reactivity
-const getStoredCards = (): Card[] => {
-  const data = localStorage.getItem("lumira_cards");
-  return data ? JSON.parse(data) : INITIAL_CARDS;
-};
+function getStoredCards(): Card[] {
+  const raw = localStorage.getItem("lumira_cards");
+  if (!raw) {
+    localStorage.setItem("lumira_cards", JSON.stringify(INITIAL_CARDS));
+    return INITIAL_CARDS;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return INITIAL_CARDS;
+  }
+}
 
-const saveStoredCards = (cards: Card[]) => {
+function saveStoredCards(cards: Card[]) {
   localStorage.setItem("lumira_cards", JSON.stringify(cards));
-};
+}
 
 export const LumiraAPI = {
   // AD-019: List Cards (mine) vs Course Spaces (scope=shared)
@@ -191,9 +344,7 @@ export const LumiraAPI = {
         const data = await res.json();
         return data.cards;
       }
-    } catch {
-      // Fallback to client state
-    }
+    } catch {}
     const cards = getStoredCards();
     if (scope === "shared") {
       return cards.filter(c => c.isShared);
@@ -202,15 +353,6 @@ export const LumiraAPI = {
   },
 
   async createCard(name: string, color: string = "from-indigo-600 to-violet-700"): Promise<Card> {
-    try {
-      const res = await fetch(`${BASE_URL}/v1/cards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, color }),
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-
     const newCard: Card = {
       id: `card-${Date.now()}`,
       ownerId: "user-1",
@@ -229,11 +371,6 @@ export const LumiraAPI = {
   },
 
   async convertToCourseSpace(cardId: string): Promise<Card> {
-    try {
-      const res = await fetch(`${BASE_URL}/v1/cards/${cardId}/share`, { method: "POST" });
-      if (res.ok) return await res.json();
-    } catch {}
-
     const list = getStoredCards();
     const idx = list.findIndex(c => c.id === cardId);
     if (idx !== -1) {
@@ -250,15 +387,29 @@ export const LumiraAPI = {
     return INITIAL_RESOURCES[cardId] || [];
   },
 
-  async addResource(cardId: string, title: string, extractedText: string): Promise<Resource> {
+  async addResource(
+    cardId: string, 
+    title: string, 
+    extractedText: string, 
+    fileType: SupportedFileType = "pdf"
+  ): Promise<Resource> {
     const res: Resource = {
       id: `res-${Date.now()}`,
       owningCardId: cardId,
       title,
-      mimeType: "application/pdf",
+      mimeType: fileType === "pdf" ? "application/pdf" : fileType === "docx" ? "application/docx" : "text/plain",
+      fileType,
       sizeBytes: 1500000,
       status: "READY",
       extractedText,
+      chunks: [
+        {
+          id: `chk-${Date.now()}-1`,
+          location: "Page 1 - Section 1",
+          pageNumber: 1,
+          content: extractedText
+        }
+      ],
       createdAt: new Date().toISOString(),
       isShared: true,
     };
@@ -317,13 +468,20 @@ export const LumiraAPI = {
       }
     } catch {}
 
-    // In-client Sarah response with pedagogical rigor
-    return `### Sarah's Study Guidance:
+    // In-client Sarah response with pedagogical rigor and Socratic grounding
+    return `### Sarah AI Study Guidance
+
 Regarding **"${params.question}"**:
 
-${params.selectedText ? `> Grounded in passage: *"${params.selectedText}"*\n` : ""}
-1. **Core Mechanism**: Let's review the fundamental equilibrium and kinetic pathway involved.
-2. **Key Distinction**: Make sure you distinguish between the thermodynamic driving force and the enzymatic regulation.
-3. **Practice Question**: How would an uncoupling agent affect this process in a biological cell?`;
+${params.selectedText ? `> 📍 **Passage Citation**: *"${params.selectedText}"*\n` : ""}
+
+1. **Biochemical / Mathematical Mechanism**:
+   - The central factor here relies on how the regulatory domain coordinates with the active catalytic site. Notice how energy is conserved through conformational coupling.
+
+2. **Exam Diagnostic Trap**:
+   - Beware of questions claiming energy is required to *form* the bond; in this system, the free energy input is required to *induce product release* by altering binding affinity.
+
+3. **Active Recall Question**:
+   - If we introduced an inhibitor that freezes the complex in the Open state, what would happen to the substrate accumulation?`;
   }
 };
