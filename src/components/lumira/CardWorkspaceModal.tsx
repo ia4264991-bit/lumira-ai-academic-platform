@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import {
   ArrowLeft, Share2, Sparkles, Send, CheckCircle2, Upload,
-  Copy, Check, MessageSquare, Maximize2, X, Users, Download
+  Copy, Check, MessageSquare, Maximize2, X, Users, Download,
+  Plus, FileText, HelpCircle, Layers, Loader2
 } from "lucide-react";
 import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SarahMessage, SupportedFileType } from "../../types/lumira";
 import { LumiraAPI } from "../../services/api";
@@ -24,13 +25,13 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
 }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("resources");
-
   const [resources, setResources] = useState<Resource[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [flashcardSets, setFlashcardSets] = useState<FlashcardSet[]>([]);
+  const [activeSetIndex, setActiveSetIndex] = useState(0);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [activeQuizIndex, setActiveQuizIndex] = useState(0);
   const [events, setEvents] = useState<CourseSpaceEvent[]>([]);
-
   const [openedResource, setOpenedResource] = useState<Resource | null>(null);
 
   const [activeFlashcardIndex, setActiveFlashcardIndex] = useState(0);
@@ -38,6 +39,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
 
+  // Sarah AI state
   const [showSarah, setShowSarah] = useState(false);
   const [sarahMessages, setSarahMessages] = useState<SarahMessage[]>([
     {
@@ -50,11 +52,24 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
   const [sarahInput, setSarahInput] = useState("");
   const [isSarahThinking, setIsSarahThinking] = useState(false);
 
+  // Resource upload sheet
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadText, setUploadText] = useState("");
   const [uploadFileType, setUploadFileType] = useState<SupportedFileType>("pdf");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+
+  // Add Note sheet
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [noteIsShared, setNoteIsShared] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
+  // AI Generation sheet (Flashcards or Quiz)
+  const [showGenerateModal, setShowGenerateModal] = useState<"flashcards" | "quiz" | null>(null);
+  const [generateTopic, setGenerateTopic] = useState("");
+  const [isGenerating, setIsGenerating] = useState<"flashcards" | "quiz" | null>(null);
 
   const [copiedLink, setCopiedLink] = useState(false);
   const [togglingSpace, setTogglingSpace] = useState(false);
@@ -114,19 +129,16 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
 
   const handleDownloadResource = (res: Resource, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-
     persistResourceDownload(res, true);
     setResources(prev => prev.map(r => r.id === res.id ? { ...r, downloadedOffline: true } : r));
 
-    // Download document text to device
-    const content = res.chunks && res.chunks.length > 0 
-      ? res.chunks.map(c => `=== ${c.location} ===\n\n${c.content}`).join("\n\n---\n\n")
-      : (res.extractedText || "Course resource content.");
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    // Create a client-side file download for the student
+    const content = res.extractedText || `Lumira Academic Resource: ${res.title}\nCard: ${card.name}\nType: ${res.fileType}`;
+    const blob = new Blob([content], { type: res.mimeType || "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${res.title.replace(/\.[^/.]+$/, "")}_offline.txt`;
+    a.download = res.title.endsWith(`.${res.fileType}`) ? res.title : `${res.title}.${res.fileType || "txt"}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -142,7 +154,8 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     if (uploadFile) {
       try {
         const newRes = await LumiraAPI.uploadResourceFile(card.id, uploadTitle.trim(), uploadFileType, uploadFile);
-        setResources(prev => [newRes, ...prev]);
+        setResources(prev => [{ ...newRes, downloadedOffline: true }, ...prev]);
+        persistResourceDownload(newRes, true);
       } catch (err: any) {
         alert("Upload failed: " + (err?.message || "unknown error"));
         return;
@@ -162,11 +175,63 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     setUploadFile(null);
   };
 
+  const handleSaveNote = async () => {
+    if (!noteTitle.trim()) return;
+    setSavingNote(true);
+    try {
+      const newNote = await LumiraAPI.addNote(card.id, noteTitle.trim(), noteContent.trim(), noteIsShared);
+      setNotes(prev => [newNote, ...prev]);
+      setShowNoteModal(false);
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteIsShared(false);
+    } catch (err: any) {
+      alert("Failed to save note: " + (err?.message || "unknown error"));
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleGenerateFlashcards = async (customTopic?: string) => {
+    setIsGenerating("flashcards");
+    try {
+      const topicToUse = customTopic !== undefined ? customTopic : generateTopic.trim();
+      const newSet = await LumiraAPI.generateFlashcards(card.id, topicToUse || undefined);
+      setFlashcardSets(prev => [newSet, ...prev]);
+      setActiveSetIndex(0);
+      setActiveFlashcardIndex(0);
+      setIsFlipped(false);
+      setShowGenerateModal(null);
+      setGenerateTopic("");
+    } catch (err: any) {
+      alert("Could not generate flashcards: " + (err?.message || "Please check your resources."));
+    } finally {
+      setIsGenerating(null);
+    }
+  };
+
+  const handleGenerateQuiz = async (customTopic?: string) => {
+    setIsGenerating("quiz");
+    try {
+      const topicToUse = customTopic !== undefined ? customTopic : generateTopic.trim();
+      const newQuiz = await LumiraAPI.generateQuiz(card.id, topicToUse || undefined);
+      setQuizzes(prev => [newQuiz, ...prev]);
+      setActiveQuizIndex(0);
+      setQuizAnswers({});
+      setQuizSubmitted(false);
+      setShowGenerateModal(null);
+      setGenerateTopic("");
+    } catch (err: any) {
+      alert("Could not generate quiz: " + (err?.message || "Please check your resources."));
+    } finally {
+      setIsGenerating(null);
+    }
+  };
+
   const handleSendSarah = async () => {
     if (!sarahInput.trim() || isSarahThinking) return;
     const question = sarahInput.trim();
     setSarahInput("");
-
     setSarahMessages(prev => [...prev, {
       id: "usr-" + Date.now(),
       role: "user",
@@ -174,7 +239,6 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
       timestamp: "Just now",
     }]);
     setIsSarahThinking(true);
-
     try {
       const answer = await LumiraAPI.askSarah({ cardId: card.id, question });
       setSarahMessages(prev => [...prev, {
@@ -200,9 +264,8 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     try {
       const updated = await LumiraAPI.convertToCourseSpace(card.id);
       onUpdateCard(updated);
-      setActiveTab("shareLink");
     } catch (e: any) {
-      alert("Couldn't create the Course Space: " + (e?.message || "unknown error"));
+      alert("Couldn't convert to Course Space: " + (e?.message || "unknown error"));
     } finally {
       setTogglingSpace(false);
     }
@@ -224,8 +287,9 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
     setTimeout(() => setCopiedLink(false), 1600);
   };
 
-  const currentCards = flashcardSets[0]?.cards || [];
-  const activeQuiz = quizzes[0];
+  const currentSet = flashcardSets[activeSetIndex] || flashcardSets[0];
+  const currentCards = currentSet?.cards || [];
+  const activeQuiz = quizzes[activeQuizIndex] || quizzes[0];
 
   const roleLabel = (card.role || "OWNER").charAt(0) + (card.role || "OWNER").slice(1).toLowerCase();
   const roleClass =
@@ -256,17 +320,17 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-canvas text-ink flex flex-col">
       <div className="max-w-[420px] mx-auto w-full h-full bg-surface flex flex-col relative sm:my-6 sm:h-[calc(100%-3rem)] sm:rounded-[32px] sm:shadow-xl overflow-hidden">
-
         {/* Back row */}
         <div className="flex items-center gap-2 px-3.5 pt-4 pb-1">
-          <button onClick={onClose} className="p-1.5 text-ink text-xl leading-none">
+          <button onClick={onClose} className="p-1.5 text-ink text-xl leading-none hover:bg-canvas rounded-full transition">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1" />
           {card.isShared && (
             <button
               onClick={() => setActiveTab("shareLink")}
-              className="w-[34px] h-[34px] rounded-full bg-[#F1F1F6] flex items-center justify-center"
+              className="w-[34px] h-[34px] rounded-full bg-[#F1F1F6] flex items-center justify-center text-ink hover:bg-[#E7E6EE] transition"
+              title="Share Link"
             >
               <Share2 className="w-4 h-4" />
             </button>
@@ -275,7 +339,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
 
         {/* Title + role */}
         <div className="px-[18px] pb-1">
-          <div className="text-[1.25rem] font-display font-bold mt-1 mb-1">{card.name}</div>
+          <div className="text-[1.25rem] font-display font-bold mt-1 mb-1 leading-snug">{card.name}</div>
           <div className="flex items-center gap-2 text-[0.78rem] text-muted">
             <span className={`px-2.5 py-0.5 rounded-full text-[0.68rem] font-bold ${roleClass}`}>{roleLabel}</span>
             {card.isShared && (
@@ -285,11 +349,11 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
         </div>
 
         {!card.isShared && (
-          <div className="flex gap-2 px-[18px] pt-2.5 pb-1.5">
+          <div className="flex gap-2 px-[18px] pt-2 pb-1">
             <button
               onClick={handleToggleCourseSpace}
               disabled={togglingSpace}
-              className="px-3.5 py-2.5 rounded-[10px] bg-primary text-white text-[0.82rem] font-display font-semibold disabled:opacity-60"
+              className="px-3.5 py-2 rounded-[10px] bg-primary text-white text-[0.8rem] font-display font-semibold disabled:opacity-60 hover:bg-primary-600 transition"
             >
               {togglingSpace ? "Creating…" : "Create Course Space"}
             </button>
@@ -297,13 +361,13 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
         )}
 
         {/* Tabs */}
-        <div className="flex gap-1 px-3.5 pt-2.5 pb-0.5 overflow-x-auto">
+        <div className="flex gap-1 px-3.5 pt-2 pb-1 overflow-x-auto no-scrollbar">
           {tabs.map(t => (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
-              className={`whitespace-nowrap px-3.5 py-2 text-[0.8rem] font-display font-semibold rounded-full transition ${
-                activeTab === t.id ? "bg-ink text-white" : "text-muted"
+              className={`whitespace-nowrap px-3.5 py-1.5 text-[0.78rem] font-display font-semibold rounded-full transition ${
+                activeTab === t.id ? "bg-ink text-white" : "text-muted hover:text-ink"
               }`}
             >
               {t.label}{t.count !== undefined ? ` (${t.count})` : ""}
@@ -311,85 +375,84 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
           ))}
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-[18px] pt-2.5 pb-24">
-
+        {/* Tab content body */}
+        <div className="flex-1 overflow-y-auto px-[18px] pt-2 pb-24">
           {activeTab === "resources" && (
             <div>
-              <div
-                onClick={() => setShowUploadModal(true)}
-                className="flex items-center gap-2 py-3 text-primary font-display font-semibold text-[0.86rem] cursor-pointer"
-              >
-                <Upload className="w-4 h-4" /> Add Resource
+              <div className="flex items-center justify-between pb-3 pt-1 border-b border-line">
+                <span className="text-[0.78rem] text-muted font-medium">{resources.length} document{resources.length === 1 ? "" : "s"}</span>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-[0.75rem] font-semibold hover:bg-primary-600 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Upload Resource</span>
+                </button>
               </div>
+
               {resources.length === 0 ? (
-                <div className="text-center py-10 text-muted text-sm">
-                  <div className="text-2xl mb-2">📄</div>No resources yet
+                <div className="text-center py-12 text-muted text-sm space-y-3">
+                  <div className="text-3xl">📄</div>
+                  <p className="font-semibold text-ink">No resources uploaded yet</p>
+                  <p className="text-[0.78rem] text-muted max-w-xs mx-auto">
+                    Upload lecture notes, PDFs, or slide decks. Sarah will ground tutoring and drills in them.
+                  </p>
+                  <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-[0.8rem] font-semibold hover:bg-primary-600 transition"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload First Resource</span>
+                  </button>
                 </div>
               ) : (
                 resources.map(res => {
-                  const isDownloaded = !!res.downloadedOffline || isResourceDownloaded(res.id);
+                  const isDownloaded = !!res.downloadedOffline;
                   return (
                     <div
                       key={res.id}
                       onClick={() => handleOpenResource(res)}
-                      className="group flex items-center gap-3 py-3 px-2 -mx-2 rounded-xl hover:bg-[#F1F1F6]/60 border-b border-line cursor-pointer transition-colors"
-                      title="Click to open and read in app"
+                      className="py-3 border-b border-line flex items-center justify-between gap-3 cursor-pointer group hover:bg-canvas/50 -mx-2 px-2 rounded-xl transition"
                     >
-                      <div className="w-9 h-9 rounded-[10px] bg-[#F1F1F6] group-hover:bg-[#E7E6EE] flex items-center justify-center text-base shrink-0 transition-colors">
-                        📄
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[0.88rem] font-semibold truncate group-hover:text-primary transition-colors">
-                            {res.title}
-                          </span>
-                          {isDownloaded && (
-                            <span 
-                              className="inline-flex items-center gap-1 text-[0.62rem] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0"
-                              title="Resource is downloaded and available offline"
-                            >
-                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
-                              Downloaded
-                            </span>
-                          )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[0.88rem] font-semibold truncate group-hover:text-primary transition-colors">
+                          {res.title}
                         </div>
-                        <div className="flex items-center gap-1.5 text-[0.72rem] text-muted mt-0.5">
-                          <span>{card.isShared ? "Shared with Course Space" : "Private"}</span>
-                          <span>·</span>
-                          <span className="uppercase font-mono">{res.fileType}</span>
+                        <div className="flex items-center gap-2 text-[0.72rem] text-muted mt-0.5">
+                          <span className="uppercase font-bold tracking-wider">{res.fileType}</span>
+                          {res.sizeBytes && <span>• {Math.round(res.sizeBytes / 1024)} KB</span>}
                           {isDownloaded && (
-                            <>
-                              <span>·</span>
-                              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Offline ready</span>
-                            </>
+                            <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                              <CheckCircle2 className="w-3 h-3" /> Offline ready
+                            </span>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         <button
-                          title={isDownloaded ? "Saved offline (Click to download file again)" : "Download for offline reading"}
                           onClick={(e) => handleDownloadResource(res, e)}
+                          title={isDownloaded ? "Re-download file" : "Download to device"}
                           className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-                            isDownloaded 
-                              ? "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25" 
-                              : "bg-[#F1F1F6] text-muted hover:text-ink hover:bg-[#E7E6EE]"
+                            isDownloaded
+                              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                              : "bg-[#F1F1F6] text-ink hover:bg-[#E7E6EE]"
                           }`}
                         >
-                          {isDownloaded ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          ) : (
-                            <Download className="w-3.5 h-3.5" />
-                          )}
+                          {isDownloaded ? <Check className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
                         </button>
+
                         <button
-                          title="Ask Sarah about this"
-                          onClick={() => { setShowSarah(true); setSarahInput(`About "${res.title}": `); }}
-                          className="w-7 h-7 rounded-full bg-[#FFF4E0] hover:bg-amber-100 flex items-center justify-center text-[0.85rem] transition-colors"
+                          onClick={() => {
+                            setShowSarah(true);
+                            setSarahInput(`Explain key concepts from "${res.title}".`);
+                          }}
+                          title="Ask Sarah about this resource"
+                          className="w-7 h-7 rounded-full bg-amber-50 hover:bg-amber-100 flex items-center justify-center transition-colors"
                         >
-                          <Sparkles className="w-3.5 h-3.5 text-amber" />
+                          <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                         </button>
+
                         <button
                           onClick={() => handleOpenResource(res)}
                           title="Open in Reader"
@@ -408,20 +471,42 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
 
           {activeTab === "notes" && (
             <div>
+              <div className="flex items-center justify-between pb-3 pt-1 border-b border-line">
+                <span className="text-[0.78rem] text-muted font-medium">{notes.length} note{notes.length === 1 ? "" : "s"}</span>
+                <button
+                  onClick={() => setShowNoteModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-[0.75rem] font-semibold hover:bg-primary-600 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Note</span>
+                </button>
+              </div>
+
               {notes.length === 0 ? (
-                <div className="text-center py-10 text-muted text-sm">
-                  <div className="text-2xl mb-2">📝</div>No notes yet — private to you unless you share it
+                <div className="text-center py-12 text-muted text-sm space-y-3">
+                  <div className="text-3xl">📝</div>
+                  <p className="font-semibold text-ink">No notes yet</p>
+                  <p className="text-[0.78rem] text-muted max-w-xs mx-auto">
+                    Take private study notes or share synthesis with fellow Course Space scholars.
+                  </p>
+                  <button
+                    onClick={() => setShowNoteModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-[0.8rem] font-semibold hover:bg-primary-600 transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create First Note</span>
+                  </button>
                 </div>
               ) : (
                 notes.map(note => (
-                  <div key={note.id} className="py-3 border-b border-line">
+                  <div key={note.id} className="py-3.5 border-b border-line">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-[0.88rem] font-semibold">{note.title}</div>
-                      <span className="text-[0.68rem] px-2 py-0.5 rounded-full bg-[#F1F1F6] text-muted shrink-0">
+                      <span className="text-[0.68rem] px-2 py-0.5 rounded-full bg-[#F1F1F6] text-muted shrink-0 font-medium">
                         {note.isShared ? "Shared" : "Private"}
                       </span>
                     </div>
-                    <p className="text-[0.82rem] text-muted mt-1 leading-relaxed whitespace-pre-wrap">{note.content}</p>
+                    <p className="text-[0.82rem] text-muted mt-1.5 leading-relaxed whitespace-pre-wrap">{note.content}</p>
                   </div>
                 ))
               )}
@@ -429,19 +514,50 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
           )}
 
           {activeTab === "flashcards" && (
-            <div className="py-2">
+            <div className="py-1">
+              <div className="flex items-center justify-between pb-3 border-b border-line mb-3">
+                {flashcardSets.length > 1 ? (
+                  <select
+                    value={activeSetIndex}
+                    onChange={e => {
+                      setActiveSetIndex(Number(e.target.value));
+                      setActiveFlashcardIndex(0);
+                      setIsFlipped(false);
+                    }}
+                    className="text-[0.78rem] bg-canvas border border-line rounded-lg px-2 py-1 font-semibold max-w-[170px] truncate"
+                  >
+                    {flashcardSets.map((s, idx) => (
+                      <option key={s.id} value={idx}>{s.title}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[0.78rem] text-muted font-medium">
+                    {currentSet ? currentSet.title : "Flashcards"}
+                  </span>
+                )}
+
+                <button
+                  onClick={() => setShowGenerateModal("flashcards")}
+                  disabled={isGenerating !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[0.75rem] font-semibold transition disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isGenerating === "flashcards" ? "animate-spin text-primary" : "text-amber-500"}`} />
+                  <span>{isGenerating === "flashcards" ? "Generating…" : "Generate with Sarah"}</span>
+                </button>
+              </div>
+
               {currentCards.length > 0 ? (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div
                     onClick={() => setIsFlipped(!isFlipped)}
-                    className="min-h-[220px] bg-canvas border border-line rounded-2xl p-6 flex flex-col justify-between cursor-pointer"
+                    className="min-h-[230px] bg-canvas border border-line rounded-2xl p-6 flex flex-col justify-between cursor-pointer select-none hover:border-primary/40 transition shadow-sm"
                   >
                     <div className="flex justify-between text-[0.7rem] text-primary font-semibold">
                       <span>Card {activeFlashcardIndex + 1} of {currentCards.length}</span>
-                      <span>{isFlipped ? "Answer" : "Tap to flip"}</span>
+                      <span className="text-muted">{isFlipped ? "Answer" : "Tap to flip"}</span>
                     </div>
                     <div className="my-auto text-center px-2">
-                      <p className="text-[1.1rem] font-display font-semibold leading-relaxed">
+                      <p className="text-[1.05rem] font-display font-semibold leading-relaxed">
                         {isFlipped ? currentCards[activeFlashcardIndex].back : currentCards[activeFlashcardIndex].front}
                       </p>
                       {currentCards[activeFlashcardIndex].hint && !isFlipped && (
@@ -449,38 +565,83 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                       )}
                     </div>
                   </div>
+
                   <div className="flex justify-between gap-2">
                     <button
                       onClick={() => { setIsFlipped(false); setActiveFlashcardIndex(p => Math.max(0, p - 1)); }}
                       disabled={activeFlashcardIndex === 0}
-                      className="flex-1 py-2.5 bg-[#F1F1F6] disabled:opacity-40 rounded-[10px] text-[0.8rem] font-display font-semibold"
+                      className="flex-1 py-2.5 bg-[#F1F1F6] disabled:opacity-40 rounded-[10px] text-[0.8rem] font-display font-semibold hover:bg-[#E7E6EE] transition"
                     >
                       Previous
                     </button>
                     <button
                       onClick={() => { setIsFlipped(false); setActiveFlashcardIndex(p => (p + 1) % currentCards.length); }}
-                      className="flex-1 py-2.5 bg-primary text-white rounded-[10px] text-[0.8rem] font-display font-semibold"
+                      className="flex-1 py-2.5 bg-primary text-white rounded-[10px] text-[0.8rem] font-display font-semibold hover:bg-primary-600 transition"
                     >
                       Next
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-10 text-muted text-sm">
-                  <div className="text-2xl mb-2">🗂️</div>No flashcards yet
+                <div className="text-center py-12 text-muted text-sm space-y-3">
+                  <div className="text-3xl">🗂️</div>
+                  <p className="font-semibold text-ink">No flashcards yet</p>
+                  <p className="text-[0.78rem] text-muted max-w-xs mx-auto">
+                    Sarah can generate grounded active-recall flashcards directly from your uploaded materials.
+                  </p>
+                  <button
+                    onClick={() => handleGenerateFlashcards()}
+                    disabled={isGenerating !== null}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-[0.8rem] font-semibold hover:bg-primary-600 transition disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Generate Flashcards with Sarah</span>
+                  </button>
                 </div>
               )}
             </div>
           )}
 
           {activeTab === "quizzes" && (
-            <div className="py-2 space-y-5">
+            <div className="py-1">
+              <div className="flex items-center justify-between pb-3 border-b border-line mb-3">
+                {quizzes.length > 1 ? (
+                  <select
+                    value={activeQuizIndex}
+                    onChange={e => {
+                      setActiveQuizIndex(Number(e.target.value));
+                      setQuizAnswers({});
+                      setQuizSubmitted(false);
+                    }}
+                    className="text-[0.78rem] bg-canvas border border-line rounded-lg px-2 py-1 font-semibold max-w-[170px] truncate"
+                  >
+                    {quizzes.map((q, idx) => (
+                      <option key={q.id} value={idx}>{q.title}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[0.78rem] text-muted font-medium">
+                    {activeQuiz ? activeQuiz.title : "Quizzes"}
+                  </span>
+                )}
+
+                <button
+                  onClick={() => setShowGenerateModal("quiz")}
+                  disabled={isGenerating !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[0.75rem] font-semibold transition disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isGenerating === "quiz" ? "animate-spin text-primary" : "text-amber-500"}`} />
+                  <span>{isGenerating === "quiz" ? "Generating…" : "Generate with Sarah"}</span>
+                </button>
+              </div>
+
               {activeQuiz ? (
-                <>
+                <div className="space-y-5">
                   <div>
                     <h2 className="text-[1.05rem] font-display font-bold">{activeQuiz.title}</h2>
                     {activeQuiz.description && <p className="text-[0.82rem] text-muted mt-0.5">{activeQuiz.description}</p>}
                   </div>
+
                   {activeQuiz.questions.map((q, idx) => (
                     <div key={q.id} className="space-y-2">
                       <p className="text-[0.85rem] font-semibold">{idx + 1}. {q.question}</p>
@@ -489,10 +650,11 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                           const isSelected = quizAnswers[q.id] === opt.id;
                           const isCorrect = q.correctOptionId === opt.id;
                           const cls = quizSubmitted
-                            ? isCorrect ? "bg-ready-bg border-ready-ink/40 text-ready-ink"
-                            : isSelected ? "bg-danger-bg border-danger/40 text-danger-ink"
+                            ? isCorrect ? "bg-emerald-50 border-emerald-500/50 text-emerald-900 font-medium"
+                            : isSelected ? "bg-rose-50 border-rose-500/50 text-rose-900"
                             : "bg-canvas border-line text-muted"
-                            : isSelected ? "bg-primary-100 border-primary text-ink" : "bg-canvas border-line text-ink";
+                            : isSelected ? "bg-primary/10 border-primary text-ink" : "bg-canvas border-line text-ink hover:border-line/80";
+
                           return (
                             <button
                               key={opt.id}
@@ -505,26 +667,44 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                         })}
                       </div>
                       {quizSubmitted && q.explanation && (
-                        <p className="text-[0.75rem] text-muted bg-canvas p-2.5 rounded-xl">💡 {q.explanation}</p>
+                        <p className="text-[0.75rem] text-muted bg-canvas p-2.5 rounded-xl border border-line">
+                          💡 {q.explanation}
+                        </p>
                       )}
                     </div>
                   ))}
+
                   {!quizSubmitted ? (
-                    <button onClick={() => setQuizSubmitted(true)} className="w-full py-3 bg-primary text-white font-display font-semibold rounded-[10px] text-[0.85rem]">
+                    <button
+                      onClick={() => setQuizSubmitted(true)}
+                      className="w-full py-3 bg-primary text-white font-display font-semibold rounded-[10px] text-[0.85rem] hover:bg-primary-600 transition"
+                    >
                       Submit Quiz
                     </button>
                   ) : (
                     <button
                       onClick={() => { setQuizSubmitted(false); setQuizAnswers({}); }}
-                      className="w-full py-2.5 bg-[#F1F1F6] text-ink text-[0.8rem] rounded-[10px] font-display font-semibold"
+                      className="w-full py-2.5 bg-[#F1F1F6] text-ink text-[0.8rem] rounded-[10px] font-display font-semibold hover:bg-[#E7E6EE] transition"
                     >
                       Retake Quiz
                     </button>
                   )}
-                </>
+                </div>
               ) : (
-                <div className="text-center py-10 text-muted text-sm">
-                  <div className="text-2xl mb-2">❓</div>No quizzes yet
+                <div className="text-center py-12 text-muted text-sm space-y-3">
+                  <div className="text-3xl">❓</div>
+                  <p className="font-semibold text-ink">No quizzes generated yet</p>
+                  <p className="text-[0.78rem] text-muted max-w-xs mx-auto">
+                    Sarah can generate a conceptual diagnostic exam directly grounded in your resources.
+                  </p>
+                  <button
+                    onClick={() => handleGenerateQuiz()}
+                    disabled={isGenerating !== null}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-[0.8rem] font-semibold hover:bg-primary-600 transition disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Generate Quiz with Sarah</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -539,129 +719,247 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
             />
           )}
 
-          {activeTab === "updates" && (
-            <div>
+          {activeTab === "updates" && card.isShared && (
+            <div className="py-2">
+              <h3 className="font-display font-bold text-[0.95rem] mb-3">Recent Activity</h3>
               {events.length === 0 ? (
-                <div className="text-center py-10 text-muted text-sm">
-                  <div className="text-2xl mb-2">🔔</div>No updates yet
-                </div>
+                <div className="text-center py-10 text-muted text-sm">No activity recorded yet.</div>
               ) : (
-                events.map(ev => (
-                  <div key={ev.id} className="py-3 border-b border-line flex items-start gap-3">
-                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-[0.86rem]">{(ev as any).actorName || "Someone"} · <span className="text-muted">{ev.type}</span></div>
-                      <div className="text-[0.72rem] text-muted mt-0.5">{new Date(ev.createdAt).toLocaleString()}</div>
+                <div className="space-y-3">
+                  {events.map(ev => (
+                    <div key={ev.id} className="p-3 bg-canvas border border-line rounded-xl text-[0.82rem]">
+                      <div className="font-semibold">{ev.actorName || "Scholar"}</div>
+                      <div className="text-muted mt-0.5">
+                        {ev.type === "RESOURCE_UPLOADED" && `Uploaded "${ev.payload?.resourceTitle || "a resource"}"`}
+                        {ev.type === "RESOURCE_ADDED" && `Added resource "${ev.payload?.title || ""}"`}
+                        {ev.type === "STUDY_ARTIFACT_GENERATED" && `Generated a ${ev.payload?.artifactType || "study artifact"}`}
+                        {ev.type === "SARAH_QUERY" && "Consulted Sarah Tutor"}
+                      </div>
+                      <div className="text-[0.68rem] text-muted/70 mt-1">
+                        {new Date(ev.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           )}
 
           {activeTab === "shareLink" && (
-            <div className="py-2">
-              {!card.shareToken ? (
-                <div className="text-center py-6">
-                  <div className="text-2xl mb-2">🔗</div>
-                  <p className="text-muted text-sm mb-4">No link yet — generate one to invite classmates.</p>
-                  <button onClick={handleGenerateLink} className="px-4 py-2.5 bg-primary text-white rounded-[10px] text-[0.82rem] font-display font-semibold">
-                    Generate link
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="text-[0.75rem] font-semibold text-muted mb-1.5">Share link</div>
-                  <div className="flex items-center gap-2 bg-[#F1F1F6] rounded-[10px] px-3 py-2.5 text-[0.8rem] mb-3.5 break-all">
-                    🔗 {window.location.origin}/join/{card.shareToken}
-                  </div>
-                  <button onClick={handleCopyShareLink} className="w-full py-2.5 bg-[#F1F1F6] rounded-[10px] text-[0.82rem] font-display font-semibold mb-4 flex items-center justify-center gap-2">
-                    {copiedLink ? <Check className="w-4 h-4 text-teal" /> : <Copy className="w-4 h-4" />}
-                    {copiedLink ? "Link copied" : "Copy link"}
-                  </button>
-                  <div className="pt-4">
-                    <button onClick={handleGenerateLink} className="w-full py-2.5 bg-danger-bg text-danger-ink rounded-[10px] text-[0.82rem] font-display font-semibold">
-                      Reset link (invalidate old one)
-                    </button>
-                  </div>
-                </>
-              )}
+            <div className="py-4 space-y-4 text-center">
+              <h3 className="font-display font-bold text-[1.1rem]">Course Space Invite Link</h3>
+              <p className="text-[0.82rem] text-muted max-w-xs mx-auto leading-relaxed">
+                Anyone with this link can join this collaborative Course Space to share resources and take study drills together.
+              </p>
+              <div className="p-3 bg-canvas border border-line rounded-xl flex items-center justify-between gap-2">
+                <input
+                  readOnly
+                  value={`${window.location.origin}/join/${card.shareToken || card.id}`}
+                  className="bg-transparent text-[0.8rem] w-full text-muted truncate outline-none"
+                />
+                <button
+                  onClick={handleCopyShareLink}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white text-[0.75rem] font-semibold shrink-0"
+                >
+                  {copiedLink ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <button
+                onClick={handleGenerateLink}
+                className="text-[0.78rem] text-primary font-semibold hover:underline"
+              >
+                Regenerate invite token
+              </button>
             </div>
           )}
         </div>
 
-        {/* Sarah FAB */}
-        <button
-          onClick={() => setShowSarah(true)}
-          className="absolute right-[18px] bottom-[18px] w-[54px] h-[54px] rounded-full bg-amber text-amber-ink flex items-center justify-center shadow-[0_8px_20px_rgba(242,169,60,0.45)]"
-        >
-          <Sparkles className="w-6 h-6" />
-        </button>
+        {/* Floating Sarah Tutor button */}
+        {!showSarah && (
+          <button
+            onClick={() => setShowSarah(true)}
+            className="absolute bottom-4 right-4 z-20 flex items-center gap-2 px-4 py-2.5 rounded-full bg-amber-500 text-ink font-display font-bold text-[0.85rem] shadow-lg hover:bg-amber-400 transition transform hover:scale-105"
+          >
+            <Sparkles className="w-4 h-4 text-amber-900" />
+            <span>Ask Sarah</span>
+          </button>
+        )}
 
-        {/* Sarah sheet */}
+        {/* Sarah Tutor Drawer */}
         {showSarah && (
-          <div className="absolute inset-0 z-20 flex items-end bg-[rgba(15,15,20,0.45)]" onClick={(e) => { if (e.target === e.currentTarget) setShowSarah(false); }}>
-            <div className="lumira-sheet bg-surface w-full rounded-t-[20px] p-5 pb-6 flex flex-col h-[78%] max-h-[560px] relative">
-              <button onClick={() => setShowSarah(false)} className="absolute top-4 right-4 text-muted">
-                <X className="w-4 h-4" />
-              </button>
-              <div className="flex items-center gap-2.5 pb-2.5 border-b border-line mb-2.5">
-                <div className="w-[30px] h-[30px] rounded-full bg-amber text-amber-ink flex items-center justify-center font-bold text-[0.85rem] shadow-[0_0_0_3px_rgba(242,169,60,0.18)]">
-                  <Sparkles className="w-4 h-4" />
-                </div>
+          <div className="absolute inset-0 z-30 flex flex-col bg-surface">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-line bg-canvas">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-700 flex items-center justify-center font-bold text-xs">
+                  ✨
+                </span>
                 <div>
-                  <div className="font-display font-bold text-[0.95rem]">Sarah</div>
-                  <div className="text-[0.72rem] text-muted">{card.name}{card.isShared ? " · Course Space" : ""}</div>
+                  <div className="font-display font-bold text-[0.95rem] leading-none">Sarah Tutor</div>
+                  <div className="text-[0.7rem] text-muted mt-0.5">Grounded in {card.name}</div>
                 </div>
               </div>
-              <div className="text-[0.7rem] text-[#8A5A0F] bg-[#FFF8EB] rounded-lg px-2.5 py-2 mb-2.5 leading-relaxed">
-                {card.isShared
-                  ? "In a Course Space, Sarah never uses another member's private notes, conversations, or generated artifacts."
-                  : "Sarah is grounded in this Card's resources and your own notes."}
-              </div>
-              <div className="flex-1 overflow-y-auto flex flex-col gap-2.5 pb-2">
-                {sarahMessages.map(msg => (
-                  <div key={msg.id} className={`flex gap-2 max-w-[88%] ${msg.role === "user" ? "self-end flex-row-reverse" : ""}`}>
-                    {msg.role !== "user" && (
-                      <div className="w-[30px] h-[30px] rounded-full bg-amber text-amber-ink flex items-center justify-center shrink-0">
-                        <Sparkles className="w-4 h-4" />
-                      </div>
-                    )}
-                    <div className={`px-3.5 py-2.5 rounded-2xl text-[0.85rem] leading-relaxed whitespace-pre-wrap ${
-                      msg.role === "user" ? "bg-primary text-white rounded-br-[4px]" : "bg-[#F1F1F6] text-ink rounded-bl-[4px]"
-                    }`}>
-                      {msg.content}
-                    </div>
+              <button onClick={() => setShowSarah(false)} className="p-1 rounded-full text-muted hover:bg-canvas">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Notice */}
+            <div className="px-4 py-2 bg-amber-50 text-amber-900 border-b border-amber-200 text-[0.72rem] leading-snug">
+              🔒 <strong>Academic Zero-Trust Grounding:</strong> Sarah references only the resources in this workspace.
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {sarahMessages.map(msg => (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-[0.82rem] leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-primary text-white rounded-br-none"
+                        : "bg-canvas border border-line text-ink rounded-bl-none whitespace-pre-wrap"
+                    }`}
+                  >
+                    {msg.content}
                   </div>
-                ))}
-                {isSarahThinking && <div className="text-[0.78rem] text-muted italic pl-9">Sarah is thinking…</div>}
-              </div>
-              <div className="flex gap-2 pt-2.5 border-t border-line mt-2">
+                  <span className="text-[0.65rem] text-muted mt-1 px-1">{msg.timestamp}</span>
+                </div>
+              ))}
+              {isSarahThinking && (
+                <div className="flex items-center gap-2 text-muted text-xs p-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                  <span>Sarah is analyzing course resources…</span>
+                </div>
+              )}
+            </div>
+
+            {/* Input */}
+            <div className="p-3 border-t border-line bg-surface">
+              <div className="flex gap-2">
                 <input
+                  type="text"
+                  placeholder="Ask a question about your materials…"
                   value={sarahInput}
                   onChange={e => setSarahInput(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && handleSendSarah()}
-                  placeholder="Ask Sarah..."
-                  className="flex-1 px-3.5 py-2.5 rounded-full border-[1.5px] border-line text-[0.85rem] focus:outline-none focus:border-primary"
+                  className="flex-1 px-3.5 py-2.5 rounded-full border border-line bg-canvas text-[0.85rem] outline-none focus:border-primary"
                 />
                 <button
                   onClick={handleSendSarah}
-                  disabled={!sarahInput.trim()}
-                  className="w-10 h-10 rounded-full bg-amber disabled:opacity-50 flex items-center justify-center shrink-0"
+                  disabled={!sarahInput.trim() || isSarahThinking}
+                  className="w-10 h-10 rounded-full bg-amber-500 text-ink flex items-center justify-center disabled:opacity-40 hover:bg-amber-400 transition shrink-0"
                 >
-                  <Send className="w-4 h-4 text-amber-ink" />
+                  <Send className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* Add Note Modal */}
+        {showNoteModal && (
+          <div
+            className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-xs"
+            onClick={e => { if (e.target === e.currentTarget) setShowNoteModal(false); }}
+          >
+            <div className="bg-surface w-full rounded-t-[24px] p-5 pb-7 relative border-t border-line shadow-2xl">
+              <button onClick={() => setShowNoteModal(false)} className="absolute top-4 right-4 text-muted p-1 hover:text-ink">
+                <X className="w-4 h-4" />
+              </button>
+              <h3 className="font-display font-bold text-[1.05rem] mb-3">Add Study Note</h3>
+              <input
+                placeholder="Note Title (e.g. Lecture 4 Key Takeaways)"
+                value={noteTitle}
+                onChange={e => setNoteTitle(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-line text-[0.88rem] mb-3 bg-canvas outline-none focus:border-primary"
+              />
+              <textarea
+                placeholder="Write your study notes, formulas, or concepts here…"
+                value={noteContent}
+                onChange={e => setNoteContent(e.target.value)}
+                rows={5}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-line text-[0.82rem] mb-3 bg-canvas outline-none focus:border-primary leading-relaxed"
+              />
+              <div className="flex items-center justify-between mb-4 px-1">
+                <span className="text-[0.78rem] text-muted font-medium">Share with Course Space</span>
+                <input
+                  type="checkbox"
+                  checked={noteIsShared}
+                  onChange={e => setNoteIsShared(e.target.checked)}
+                  className="w-4 h-4 rounded text-primary"
+                />
+              </div>
+              <button
+                onClick={handleSaveNote}
+                disabled={!noteTitle.trim() || savingNote}
+                className="w-full py-2.5 bg-primary text-white rounded-xl font-display font-semibold text-[0.85rem] disabled:opacity-50 hover:bg-primary-600 transition"
+              >
+                {savingNote ? "Saving…" : "Save Note"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Generate Flashcards / Quiz with Sarah Prompt Modal */}
+        {showGenerateModal && (
+          <div
+            className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-xs"
+            onClick={e => { if (e.target === e.currentTarget) setShowGenerateModal(null); }}
+          >
+            <div className="bg-surface w-full rounded-t-[24px] p-5 pb-7 relative border-t border-line shadow-2xl">
+              <button onClick={() => setShowGenerateModal(null)} className="absolute top-4 right-4 text-muted p-1 hover:text-ink">
+                <X className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-amber-500 text-lg">✨</span>
+                <h3 className="font-display font-bold text-[1.05rem]">
+                  Generate {showGenerateModal === "flashcards" ? "Flashcards" : "Quiz"} with Sarah
+                </h3>
+              </div>
+              <p className="text-[0.78rem] text-muted mb-3.5 leading-relaxed">
+                Sarah will synthesize your workspace resources. You can enter an optional focus topic or leave blank for a comprehensive study set.
+              </p>
+              <input
+                placeholder="Optional focus topic (e.g. Mitochondrial gradient, Eigenvalues)"
+                value={generateTopic}
+                onChange={e => setGenerateTopic(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-line text-[0.85rem] mb-4 bg-canvas outline-none focus:border-primary"
+              />
+              <button
+                onClick={() => showGenerateModal === "flashcards" ? handleGenerateFlashcards() : handleGenerateQuiz()}
+                disabled={isGenerating !== null}
+                className="w-full py-2.5 bg-primary text-white rounded-xl font-display font-semibold text-[0.85rem] flex items-center justify-center gap-2 hover:bg-primary-600 transition disabled:opacity-60"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Sarah is synthesizing…</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Generate Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Upload Resource sheet */}
         {showUploadModal && (
-          <div className="absolute inset-0 z-20 flex items-end bg-[rgba(15,15,20,0.45)]" onClick={(e) => { if (e.target === e.currentTarget) setShowUploadModal(false); }}>
-            <div className="bg-surface w-full rounded-t-[20px] p-5 pb-7 relative">
-              <button onClick={() => setShowUploadModal(false)} className="absolute top-4 right-4 text-muted"><X className="w-4 h-4" /></button>
-              <h3 className="font-display font-bold text-[1.05rem] mb-3.5">Add Resource</h3>
+          <div
+            className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-xs"
+            onClick={e => { if (e.target === e.currentTarget) setShowUploadModal(false); }}
+          >
+            <div className="bg-surface w-full rounded-t-[24px] p-5 pb-7 relative border-t border-line shadow-2xl">
+              <button onClick={() => setShowUploadModal(false)} className="absolute top-4 right-4 text-muted p-1 hover:text-ink">
+                <X className="w-4 h-4" />
+              </button>
+              <h3 className="font-display font-bold text-[1.05rem] mb-3">Add Resource</h3>
               <div className="mb-3.5">
                 <label className="text-[0.75rem] font-semibold text-muted mb-1.5 block">Format</label>
                 <div className="flex gap-1.5 flex-wrap">
@@ -669,8 +967,8 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                     <button
                       key={type}
                       onClick={() => setUploadFileType(type)}
-                      className={`px-2.5 py-1 rounded-full text-[0.68rem] font-semibold uppercase ${
-                        uploadFileType === type ? "bg-ink text-white" : "bg-[#F1F1F6] text-muted"
+                      className={`px-2.5 py-1 rounded-full text-[0.68rem] font-semibold uppercase transition ${
+                        uploadFileType === type ? "bg-ink text-white" : "bg-[#F1F1F6] text-muted hover:text-ink"
                       }`}
                     >
                       {type}
@@ -679,10 +977,10 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                 </div>
               </div>
               <input
-                placeholder="e.g. Lecture 5.pdf"
+                placeholder="Title (e.g. Lecture 5 Notes.pdf)"
                 value={uploadTitle}
                 onChange={e => setUploadTitle(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-[10px] border-[1.5px] border-line text-[0.9rem] mb-3.5"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-line text-[0.88rem] mb-3 bg-canvas outline-none focus:border-primary"
               />
               <input
                 type="file"
@@ -691,23 +989,28 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                   setUploadFile(f);
                   if (f && !uploadTitle) setUploadTitle(f.name);
                 }}
-                className="w-full text-[0.78rem] text-muted mb-2"
+                className="w-full text-[0.78rem] text-muted mb-2 file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
               />
-              <div className="text-center text-[0.72rem] text-muted mb-2">— or paste text below —</div>
+              <div className="text-center text-[0.72rem] text-muted my-2">— or paste text directly —</div>
               <textarea
-                placeholder="Paste extracted text or notes (optional)"
+                placeholder="Paste extracted text or lecture notes for Sarah to tutor on…"
                 value={uploadText}
                 onChange={e => setUploadText(e.target.value)}
                 rows={4}
-                className="w-full px-3.5 py-2.5 rounded-[10px] border-[1.5px] border-line text-[0.82rem] mb-3.5"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-line text-[0.82rem] mb-3.5 bg-canvas outline-none focus:border-primary leading-relaxed"
               />
-              <button onClick={handleAddResource} className="w-full py-2.5 bg-primary text-white rounded-[10px] font-display font-semibold text-[0.85rem]">
-                Upload
+              <button
+                onClick={handleAddResource}
+                disabled={!uploadTitle.trim()}
+                className="w-full py-2.5 bg-primary text-white rounded-xl font-display font-semibold text-[0.85rem] disabled:opacity-50 hover:bg-primary-600 transition"
+              >
+                Upload Resource
               </button>
             </div>
           </div>
         )}
 
+        {/* Full Reader Modal */}
         {openedResource && (
           <ResourceReaderModal
             resource={openedResource}
