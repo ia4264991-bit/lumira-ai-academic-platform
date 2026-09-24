@@ -1,4 +1,5 @@
 import { api, APIError } from "encore.dev/api";
+import { getAuthData } from "~encore/auth";
 import { SQLDatabase } from "encore.dev/storage/sqldb";
 
 // Database definition for Cards, Memberships, Artifacts, and Events (AD-019, AD-023, AD-026, AD-045, AD-057)
@@ -46,10 +47,9 @@ export interface CourseSpaceEvent {
 
 // POST /v1/cards - Create Card (AD-019, AD-048)
 export const createCard = api(
-  { expose: true, method: "POST", path: "/v1/cards" },
+  { expose: true, method: "POST", path: "/v1/cards", auth: true },
   async (req: CreateCardRequest): Promise<Card> => {
-    // In MVP identity boundary, userId is provided via header or default
-    const ownerId = "00000000-0000-0000-0000-000000000001";
+    const ownerId = getAuthData()!.userID;
     const name = req.name.trim();
     if (!name) throw APIError.invalidArgument("Card name is required");
     const color = req.color || "indigo";
@@ -76,9 +76,9 @@ export const createCard = api(
 
 // GET /v1/cards - List user Cards / Course Spaces (AD-019: filtered views over single aggregate)
 export const listCards = api(
-  { expose: true, method: "GET", path: "/v1/cards" },
+  { expose: true, method: "GET", path: "/v1/cards", auth: true },
   async (params: { scope?: string }): Promise<{ cards: Card[] }> => {
-    const userId = "00000000-0000-0000-0000-000000000001";
+    const userId = getAuthData()!.userID;
     if (params.scope === "shared") {
       // Course Spaces view: Cards with isShared=true where caller is owner or active member
       const rows = await cardDB.query`
@@ -160,9 +160,9 @@ export const getCard = api(
 
 // POST /v1/cards/:cardId/share - Enable Course Space sharing capability (AD-019, AD-023)
 export const enableSharing = api(
-  { expose: true, method: "POST", path: "/v1/cards/:cardId/share" },
+  { expose: true, method: "POST", path: "/v1/cards/:cardId/share", auth: true },
   async ({ cardId }: { cardId: string }): Promise<Card> => {
-    const ownerId = "00000000-0000-0000-0000-000000000001";
+    const ownerId = getAuthData()!.userID;
     const shareToken = Math.random().toString(36).substring(2, 12);
 
     await cardDB.exec`

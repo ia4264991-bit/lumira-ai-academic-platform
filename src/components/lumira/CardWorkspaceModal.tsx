@@ -54,6 +54,7 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadText, setUploadText] = useState("");
   const [uploadFileType, setUploadFileType] = useState<SupportedFileType>("pdf");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   const [copiedLink, setCopiedLink] = useState(false);
   const [togglingSpace, setTogglingSpace] = useState(false);
@@ -84,16 +85,27 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
 
   const handleAddResource = async () => {
     if (!uploadTitle.trim()) return;
-    const newRes = await LumiraAPI.addResource(
-      card.id,
-      uploadTitle.trim(),
-      uploadText.trim() || "Course notes and key topics.",
-      uploadFileType
-    );
-    setResources(prev => [newRes, ...prev]);
+    if (uploadFile) {
+      try {
+        const newRes = await LumiraAPI.uploadResourceFile(card.id, uploadTitle.trim(), uploadFileType, uploadFile);
+        setResources(prev => [newRes, ...prev]);
+      } catch (err: any) {
+        alert("Upload failed: " + (err?.message || "unknown error"));
+        return;
+      }
+    } else {
+      const newRes = await LumiraAPI.addResource(
+        card.id,
+        uploadTitle.trim(),
+        uploadText.trim() || "Course notes and key topics.",
+        uploadFileType
+      );
+      setResources(prev => [newRes, ...prev]);
+    }
     setShowUploadModal(false);
     setUploadTitle("");
     setUploadText("");
+    setUploadFile(null);
   };
 
   const handleSendSarah = async () => {
@@ -569,6 +581,16 @@ export const CardWorkspaceModal: React.FC<CardWorkspaceModalProps> = ({
                 onChange={e => setUploadTitle(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-[10px] border-[1.5px] border-line text-[0.9rem] mb-3.5"
               />
+              <input
+                type="file"
+                onChange={e => {
+                  const f = e.target.files?.[0] || null;
+                  setUploadFile(f);
+                  if (f && !uploadTitle) setUploadTitle(f.name);
+                }}
+                className="w-full text-[0.78rem] text-muted mb-2"
+              />
+              <div className="text-center text-[0.72rem] text-muted mb-2">— or paste text below —</div>
               <textarea
                 placeholder="Paste extracted text or notes (optional)"
                 value={uploadText}

@@ -1,9 +1,10 @@
 import { api, APIError } from "encore.dev/api";
+import { getAuthData } from "~encore/auth";
 import { cardDB, Role, CardMember } from "./card";
 
 // GET /v1/cards/:cardId/members - AD-023, AD-032
 export const listMembers = api(
-  { expose: true, method: "GET", path: "/v1/cards/:cardId/members" },
+  { expose: true, method: "GET", path: "/v1/cards/:cardId/members", auth: true },
   async ({ cardId }: { cardId: string }): Promise<{ members: CardMember[] }> => {
     const rows = await cardDB.query`
       SELECT card_id as "cardId", user_id as "userId", status, role, joined_at as "joinedAt"
@@ -27,9 +28,9 @@ export const listMembers = api(
 
 // POST /v1/cards/:cardId/members/:userId/promote - AD-034: Owner only
 export const promoteMember = api(
-  { expose: true, method: "POST", path: "/v1/cards/:cardId/members/:userId/promote" },
+  { expose: true, method: "POST", path: "/v1/cards/:cardId/members/:userId/promote", auth: true },
   async ({ cardId, userId }: { cardId: string; userId: string }) => {
-    const callerId = "00000000-0000-0000-0000-000000000001";
+    const callerId = getAuthData()!.userID;
     // Check if caller is Owner
     const card = await cardDB.queryRow`
       SELECT owner_id as "ownerId" FROM card WHERE id = ${cardId}
@@ -54,9 +55,9 @@ export const promoteMember = api(
 
 // POST /v1/cards/:cardId/leave - AD-042: Owner CANNOT leave without transfer/dissolve
 export const leaveCourseSpace = api(
-  { expose: true, method: "POST", path: "/v1/cards/:cardId/leave" },
+  { expose: true, method: "POST", path: "/v1/cards/:cardId/leave", auth: true },
   async ({ cardId }: { cardId: string }) => {
-    const callerId = "00000000-0000-0000-0000-000000000001";
+    const callerId = getAuthData()!.userID;
     const card = await cardDB.queryRow`
       SELECT owner_id as "ownerId" FROM card WHERE id = ${cardId}
     `;

@@ -23,3 +23,4 @@ backend/node_modules/
 backend/encore.gen/
 node_modules/
 dist/
+backend/tsconfig.tsbuildinfo
