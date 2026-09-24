@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { AuthModal } from "./AuthModal";
+import { CourseSpaceChat } from "./CourseSpaceChat";
 
 export interface ResourceItem {
   id: string;
@@ -147,7 +148,7 @@ export const LumiraFullApp: React.FC = () => {
   const [screen, setScreen] = useState<"home" | "cardDetail" | "comingSoon">("home");
   const [homeTab, setHomeTab] = useState<"cards" | "spaces">("cards");
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
-  const [cardTab, setCardTab] = useState<"resources" | "notes" | "quizzes" | "flashcards" | "updates" | "members" | "shareLink">("resources");
+  const [cardTab, setCardTab] = useState<"resources" | "notes" | "quizzes" | "flashcards" | "chat" | "updates" | "members" | "shareLink">("resources");
 
   // Domain state
   const [cards, setCards] = useState<LumiraCard[]>(INITIAL_CARDS);
@@ -478,10 +479,10 @@ export const LumiraFullApp: React.FC = () => {
         <div className="bg-[#181A22] border border-[#262833]/80 rounded-xl p-3 text-left text-xs text-slate-300 space-y-1.5 shadow-lg">
           <p className="font-semibold text-amber-400">⚡ Interactive Prototype Walkthrough:</p>
           <p className="text-slate-400 leading-normal">
-            1. Open <strong>"Database Systems"</strong> → tap <strong>+ Add Resource</strong>, watch it advance from <code>PENDING</code> → <code>PROCESSING</code> → <code>READY</code>.
+            1. Open <strong>"Operating Systems"</strong> (Course Space) → tap the new <strong>"Chat"</strong> tab to message peers in real time using your scholar identity.
           </p>
           <p className="text-slate-400 leading-normal">
-            2. Open <strong>"Operating Systems"</strong> (Course Space) → tap 🔗 (Share) → tap <strong>"👀 Preview as joining student"</strong> to verify AD-025 (student receives an independent Card with shared resources by reference).
+            2. Tap 🔗 (Share) → tap <strong>"👀 Preview as joining student"</strong> to verify AD-025 (student receives an independent Card with shared resources by reference).
           </p>
         </div>
 
@@ -729,7 +730,7 @@ export const LumiraFullApp: React.FC = () => {
                 </div>
               )}
 
-              {/* Section Tabs (AD-020) */}
+              {/* Section Tabs (AD-020 + Live Chat Tab for Course Spaces) */}
               <div className="flex gap-1 px-3 border-b border-[#E7E6EE] overflow-x-auto no-scrollbar mb-2">
                 {[
                   { id: "resources", label: "Resources" },
@@ -737,6 +738,7 @@ export const LumiraFullApp: React.FC = () => {
                   { id: "quizzes", label: "Quizzes" },
                   { id: "flashcards", label: "Flashcards" },
                   ...(activeCard.isShared ? [
+                    { id: "chat", label: "💬 Chat" },
                     { id: "updates", label: "Updates" },
                     { id: "members", label: "Members" }
                   ] : [])
@@ -914,6 +916,18 @@ export const LumiraFullApp: React.FC = () => {
                       ✨ Generate Flashcards with Sarah
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* SUBSECTION: LIVE CHAT (NEW) */}
+              {cardTab === "chat" && activeCard.isShared && (
+                <div className="px-3">
+                  <CourseSpaceChat
+                    cardId={activeCard.id}
+                    cardName={activeCard.name}
+                    userRole={activeCard.myRole}
+                    membersCount={activeCard.members.length}
+                  />
                 </div>
               )}
 
