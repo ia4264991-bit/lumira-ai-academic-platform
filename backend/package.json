@@ -10,6 +10,8 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "encore.dev": "^1.58.6"
+    "encore.dev": "^1.58.6",
+    "firebase-admin": "^12.7.0",
+    "@google/generative-ai": "^0.21.0"
   }
 }

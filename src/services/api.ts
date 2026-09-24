@@ -2,6 +2,7 @@
 // Adheres strictly to AD-019 through AD-056 and RESOURCE_FILE_PROCESSING_SPEC
 
 import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SupportedFileType } from "../types/lumira";
+import { auth as firebaseAuth } from "./firebase";
 
 // Encore backend base URL. In production this MUST be set via VITE_API_BASE_URL
 // (e.g. your deployed Encore environment URL). Falling back to localhost:4000
@@ -9,9 +10,14 @@ import { Card, Resource, Note, FlashcardSet, Quiz, CourseSpaceEvent, SupportedFi
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const idToken = await firebaseAuth.currentUser?.getIdToken().catch(() => undefined);
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      ...(init?.headers || {}),
+    },
   });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
@@ -423,71 +429,84 @@ export const LumiraAPI = {
     return apiFetch(`/v1/artifacts/${artifactType}/${artifactId}/share/${cardId}`, { method: "DELETE" });
   },
 
-  // NOTE (architecture gap, reported not silently patched — see LUMIRA_ENGINEERING_CONTRACT §16):
-  // the backend has no Resource/Note/Quiz/FlashcardSet service yet — only artifacts.ts's
-  // share/unshare endpoints exist, which assume those artifacts are created somewhere.
-  // These four methods remain client-side-only (localStorage) until that service is designed
-  // and approved. They are NOT persisted to the backend and will not sync across devices.
+  // backend: GET/POST /v1/cards/:cardId/resources (resource/resource.ts) — real, persisted
   async getResources(cardId: string): Promise<Resource[]> {
-    return INITIAL_RESOURCES[cardId] || [];
+    const data = await apiFetch<{ resources: any[] }>(`/v1/cards/${cardId}/resources`);
+    return data.resources.map(r => ({ ...r, chunks: [] }));
   },
 
   async addResource(
-    cardId: string, 
-    title: string, 
-    extractedText: string, 
+    cardId: string,
+    title: string,
+    extractedText: string,
     fileType: SupportedFileType = "pdf"
   ): Promise<Resource> {
-    const res: Resource = {
-      id: `res-${Date.now()}`,
-      owningCardId: cardId,
-      title,
-      mimeType: fileType === "pdf" ? "application/pdf" : fileType === "docx" ? "application/docx" : "text/plain",
-      fileType,
-      sizeBytes: 1500000,
-      status: "READY",
-      extractedText,
-      chunks: [
-        {
-          id: `chk-${Date.now()}-1`,
-          location: "Page 1 - Section 1",
-          pageNumber: 1,
-          content: extractedText
-        }
-      ],
-      createdAt: new Date().toISOString(),
-      isShared: true,
-    };
-    if (!INITIAL_RESOURCES[cardId]) INITIAL_RESOURCES[cardId] = [];
-    INITIAL_RESOURCES[cardId].unshift(res);
-    return res;
+    const res = await apiFetch<any>(`/v1/cards/${cardId}/resources`, {
+      method: "POST",
+      body: JSON.stringify({ cardId, title, extractedText, fileType }),
+    });
+    return { ...res, chunks: [] };
   },
 
+  // backend: POST /v1/cards/:cardId/resources/upload (resource/resource.ts) — real file bytes,
+  // stored in the `resource-files` Object Storage bucket. 25MB MVP limit; see docs.
+  async uploadResourceFile(cardId: string, title: string, fileType: SupportedFileType, file: File): Promise<Resource> {
+    const base64Content = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const res = await apiFetch<any>(`/v1/cards/${cardId}/resources/upload`, {
+      method: "POST",
+      body: JSON.stringify({ cardId, title, fileType, base64Content }),
+    });
+    return { ...res, chunks: [] };
+  },
+
+  // backend: GET/POST /v1/cards/:cardId/notes and PATCH /v1/notes/:noteId (note/note.ts) — real, persisted
   async getNotes(cardId: string): Promise<Note[]> {
-    return INITIAL_NOTES[cardId] || [];
+    const data = await apiFetch<{ notes: Note[] }>(`/v1/cards/${cardId}/notes`);
+    return data.notes;
   },
 
   async addNote(cardId: string, title: string, content: string): Promise<Note> {
-    const note: Note = {
-      id: `note-${Date.now()}`,
-      owningCardId: cardId,
-      title,
-      content,
-      isShared: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    if (!INITIAL_NOTES[cardId]) INITIAL_NOTES[cardId] = [];
-    INITIAL_NOTES[cardId].unshift(note);
-    return note;
+    return apiFetch<Note>(`/v1/cards/${cardId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ cardId, title, content }),
+    });
   },
 
+  async updateNote(noteId: string, patch: { title?: string; content?: string; isShared?: boolean }): Promise<Note> {
+    return apiFetch<Note>(`/v1/notes/${noteId}`, { method: "PATCH", body: JSON.stringify({ noteId, ...patch }) });
+  },
+
+  // backend: POST /v1/cards/:cardId/sarah/generate + GET /v1/cards/:cardId/study-artifacts
+  // (sarah/sarah.ts) — Gemini-generated, persisted to study_artifact so they survive a refresh.
   async getFlashcardSets(cardId: string): Promise<FlashcardSet[]> {
-    return INITIAL_FLASHCARDS[cardId] || [];
+    const data = await apiFetch<{ artifacts: any[] }>(`/v1/cards/${cardId}/study-artifacts?type=flashcardset`);
+    return data.artifacts.map(a => ({ id: a.id, owningCardId: cardId, title: a.title, isShared: true, cards: a.cards || [], createdAt: a.createdAt }));
+  },
+
+  async generateFlashcards(cardId: string, topic?: string): Promise<FlashcardSet> {
+    const res = await apiFetch<any>(`/v1/cards/${cardId}/sarah/generate`, {
+      method: "POST",
+      body: JSON.stringify({ cardId, type: "flashcards", topic }),
+    });
+    return { id: `fresh-${Date.now()}`, owningCardId: cardId, title: res.title, isShared: true, cards: res.cards, createdAt: new Date().toISOString() };
   },
 
   async getQuizzes(cardId: string): Promise<Quiz[]> {
-    return INITIAL_QUIZZES[cardId] || [];
+    const data = await apiFetch<{ artifacts: any[] }>(`/v1/cards/${cardId}/study-artifacts?type=quiz`);
+    return data.artifacts.map(a => ({ id: a.id, owningCardId: cardId, title: a.title, description: "", isShared: true, questions: a.questions || [], createdAt: a.createdAt }));
+  },
+
+  async generateQuiz(cardId: string, topic?: string): Promise<Quiz> {
+    const res = await apiFetch<any>(`/v1/cards/${cardId}/sarah/generate`, {
+      method: "POST",
+      body: JSON.stringify({ cardId, type: "quiz", topic }),
+    });
+    return { id: `fresh-${Date.now()}`, owningCardId: cardId, title: res.title, description: "", isShared: true, questions: res.questions, createdAt: new Date().toISOString() };
   },
 
   // backend: GET /v1/cards/:cardId/events (AD-026 activity feed) — real endpoint, wired for real

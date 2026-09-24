@@ -1,4 +1,5 @@
 import { api, APIError } from "encore.dev/api";
+import { getAuthData } from "~encore/auth";
 import { cardDB, Card, Role } from "../card/card";
 
 export interface JoinResponse {
@@ -15,8 +16,15 @@ export interface ShareLinkResponse {
 
 // POST /v1/cards/:cardId/share-link - Generate/Reset link (AD-024, AD-062)
 export const resetShareLink = api(
-  { expose: true, method: "POST", path: "/v1/cards/:cardId/share-link" },
+  { expose: true, method: "POST", path: "/v1/cards/:cardId/share-link", auth: true },
   async ({ cardId }: { cardId: string }): Promise<ShareLinkResponse> => {
+    const callerId = getAuthData()!.userID;
+    const card = await cardDB.queryRow`SELECT owner_id as "ownerId" FROM card WHERE id = ${cardId}`;
+    if (!card) throw APIError.notFound("Card not found");
+    if (card.ownerId !== callerId) {
+      throw APIError.permissionDenied("Only the Card owner can manage its share link");
+    }
+
     const newToken = Math.random().toString(36).substring(2, 12);
     await cardDB.exec`
       UPDATE card 
@@ -34,7 +42,7 @@ export const resetShareLink = api(
 
 // POST /v1/join/:shareToken - Join Course Space (AD-025, AD-033)
 export const joinCourseSpace = api(
-  { expose: true, method: "POST", path: "/v1/join/:shareToken" },
+  { expose: true, method: "POST", path: "/v1/join/:shareToken", auth: true },
   async ({ shareToken }: { shareToken: string }): Promise<JoinResponse> => {
     const originCard = await cardDB.queryRow`
       SELECT id, name, color, is_shared as "isShared" 
@@ -45,7 +53,7 @@ export const joinCourseSpace = api(
       throw APIError.notFound("Invite link invalid or expired");
     }
 
-    const joinerUserId = "00000000-0000-0000-0000-000000000002"; // joiner persona
+    const joinerUserId = getAuthData()!.userID;
 
     // AD-025: joining auto-creates a new member Card with origin references
     const joinerCard = await cardDB.queryRow`
@@ -53,6 +61,7 @@ export const joinCourseSpace = api(
       VALUES (${joinerUserId}, ${originCard.name + " (Joined)"}, ${originCard.color}, true)
       RETURNING id, owner_id as "ownerId", name, color, is_shared as "isShared", created_at as "createdAt"
     `;
+    if (!joinerCard) throw APIError.internal("failed to create joiner card");
 
     // Create ACTIVE membership on the origin Course Space
     await cardDB.exec`
@@ -85,7 +94,7 @@ export const joinCourseSpace = api(
 
 // GET /v1/cards/:cardId/events - Activity Feed (AD-026)
 export const getCourseSpaceEvents = api(
-  { expose: true, method: "GET", path: "/v1/cards/:cardId/events" },
+  { expose: true, method: "GET", path: "/v1/cards/:cardId/events", auth: true },
   async ({ cardId }: { cardId: string }) => {
     const rows = await cardDB.query`
       SELECT id, card_id as "cardId", type, actor_user_id as "actorUserId", created_at as "createdAt", payload

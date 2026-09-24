@@ -1,4 +1,5 @@
 import { api, APIError } from "encore.dev/api";
+import { getAuthData } from "~encore/auth";
 import { cardDB } from "./card";
 
 export interface ChatMessage {
@@ -54,7 +55,7 @@ const spaceChatMessages: Record<string, ChatMessage[]> = {
 
 // GET /v1/cards/:cardId/chat - Fetch Course Space chat messages
 export const getChatMessages = api(
-  { expose: true, method: "GET", path: "/v1/cards/:cardId/chat" },
+  { expose: true, method: "GET", path: "/v1/cards/:cardId/chat", auth: true },
   async ({ cardId }: { cardId: string }): Promise<{ messages: ChatMessage[] }> => {
     return { messages: spaceChatMessages[cardId] || [] };
   }
@@ -62,7 +63,7 @@ export const getChatMessages = api(
 
 // POST /v1/cards/:cardId/chat - Send a real-time message to Course Space members
 export const sendChatMessage = api(
-  { expose: true, method: "POST", path: "/v1/cards/:cardId/chat" },
+  { expose: true, method: "POST", path: "/v1/cards/:cardId/chat", auth: true },
   async ({ cardId, senderName, senderRole, text }: SendChatMessageRequest): Promise<ChatMessage> => {
     if (!text?.trim()) {
       throw APIError.invalidArgument("Message text cannot be empty");
@@ -72,10 +73,11 @@ export const sendChatMessage = api(
       spaceChatMessages[cardId] = [];
     }
 
+    const senderId = getAuthData()!.userID;
     const newMsg: ChatMessage = {
       id: "cm-" + Date.now(),
       cardId,
-      senderId: "user-current",
+      senderId,
       senderName: senderName || "Scholar",
       senderRole: senderRole || "Owner",
       text: text.trim(),

@@ -1,4 +1,5 @@
 import { api, APIError } from "encore.dev/api";
+import { getAuthData } from "~encore/auth";
 import { cardDB, Role } from "./card";
 
 export interface ResourceItem {
@@ -29,9 +30,9 @@ export interface ShareArtifactRequest {
 
 // POST /v1/artifacts/:artifactType/:artifactId/share - Explicit share record (AD-045)
 export const shareArtifact = api(
-  { expose: true, method: "POST", path: "/v1/artifacts/:artifactType/:artifactId/share" },
+  { expose: true, method: "POST", path: "/v1/artifacts/:artifactType/:artifactId/share", auth: true },
   async ({ artifactType, artifactId, cardId }: ShareArtifactRequest) => {
-    const userId = "00000000-0000-0000-0000-000000000001";
+    const userId = getAuthData()!.userID;
 
     await cardDB.exec`
       INSERT INTO artifact_share (artifact_type, artifact_id, card_id, shared_by)
@@ -51,9 +52,9 @@ export const shareArtifact = api(
 
 // DELETE /v1/artifacts/:artifactType/:artifactId/share/:cardId - Unshare (AD-044, AD-046)
 export const unshareArtifact = api(
-  { expose: true, method: "DELETE", path: "/v1/artifacts/:artifactType/:artifactId/share/:cardId" },
+  { expose: true, method: "DELETE", path: "/v1/artifacts/:artifactType/:artifactId/share/:cardId", auth: true },
   async ({ artifactType, artifactId, cardId }: { artifactType: string; artifactId: string; cardId: string }) => {
-    const userId = "00000000-0000-0000-0000-000000000001";
+    const userId = getAuthData()!.userID;
 
     await cardDB.exec`
       DELETE FROM artifact_share 
